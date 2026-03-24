@@ -77,8 +77,13 @@ export const AuthProvider = ({ children }) => {
 
   const registerMentor = async (data) => {
     try {
-      const response = await api.post('/auth/register', { ...data, role: 'mentor' });
-      const userData = response.data.user;
+      const payload = data instanceof FormData ? data : { ...data, userType: 'mentor' };
+      if (data instanceof FormData && !data.has('userType')) payload.append('userType', 'mentor');
+      
+      const response = await api.post('/auth/register', payload, {
+        headers: data instanceof FormData ? { 'Content-Type': 'multipart/form-data' } : undefined
+      });
+      const userData = response.data?.data?.user || response.data?.user;
       if (userData) {
          setUser(normalizeUser(userData));
          localStorage.setItem('wisdom_user', JSON.stringify(userData));
@@ -91,8 +96,13 @@ export const AuthProvider = ({ children }) => {
 
   const registerMentee = async (data) => {
     try {
-      const response = await api.post('/auth/register', { ...data, role: 'mentee' });
-      const userData = response.data.user;
+      const payload = data instanceof FormData ? data : { ...data, userType: 'mentee' };
+      if (data instanceof FormData && !data.has('userType')) payload.append('userType', 'mentee');
+
+      const response = await api.post('/auth/register', payload, {
+        headers: data instanceof FormData ? { 'Content-Type': 'multipart/form-data' } : undefined
+      });
+      const userData = response.data?.data?.user || response.data?.user;
       if (userData) {
          setUser(normalizeUser(userData));
          localStorage.setItem('wisdom_user', JSON.stringify(userData));

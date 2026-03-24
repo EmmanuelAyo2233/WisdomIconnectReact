@@ -21,12 +21,12 @@ const AdminHome = () => {
   useEffect(() => {
     const fetchAdminData = async () => {
       try {
-        const response = await adminService.getUsers();
-        const users = response.data.users || response.data || [];
+        const response = await adminService.getStats();
+        const s = response.data;
         setStats({
-          totalUsers: users.length,
-          activeMentors: users.filter(u => u.role === 'mentor' && u.isVerified).length,
-          pendingApprovals: users.filter(u => u.role === 'mentor' && !u.isVerified).length,
+          totalUsers: s.mentees + s.mentorsApproved + s.mentorsPending + s.mentorsRejected,
+          activeMentors: s.mentorsApproved,
+          pendingApprovals: s.mentorsPending,
           totalSessions: 'N/A', // Endpoint doesn't provide global sessions
           platformGrowth: '+15.4%' // Mocked for now
         });
@@ -43,6 +43,18 @@ const AdminHome = () => {
     ]);
   }, []);
 
+  const handleExportData = () => {
+    if (!stats) return;
+    const csvContent = `data:text/csv;charset=utf-8,Metric,Count\nTotal Users,${stats.totalUsers}\nActive Mentors,${stats.activeMentors}\nPending Mentors,${stats.pendingApprovals}\nTotal Mentees,${stats.mentees || 0}`;
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", "platform_stats.csv");
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   return (
     <div className="max-w-7xl mx-auto space-y-6">
       
@@ -55,7 +67,7 @@ const AdminHome = () => {
           <button className="btn-secondary h-10 px-4 text-sm flex items-center">
             <Shield size={16} className="mr-2" /> Security Log
           </button>
-          <button className="btn-primary h-10 px-4 text-sm flex items-center">
+          <button onClick={handleExportData} className="btn-primary h-10 px-4 text-sm flex items-center">
              Export Data
           </button>
         </div>

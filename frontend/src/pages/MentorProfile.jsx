@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Star, CheckCircle, X, Linkedin, MessageSquare, Heart, MoreHorizontal, Briefcase, GraduationCap, Calendar, Clock, ChevronLeft, ChevronRight, DollarSign } from 'lucide-react';
-import { mentorService, bookingService } from '../api/services';
+import { mentorService, bookingService, connectionService } from '../api/services';
 import { useToast } from '../context/ToastContext';
 
 const MentorProfile = () => {
@@ -18,6 +18,10 @@ const MentorProfile = () => {
   const [currentMonth, setCurrentMonth] = useState(new Date(new Date().getFullYear(), new Date().getMonth(), 1));
   
   const [selectedDateStr, setSelectedDateStr] = useState('');
+  const [isMessageModalOpen, setIsMessageModalOpen] = useState(false);
+  const [messageText, setMessageText] = useState('');
+  const [isSendingMessage, setIsSendingMessage] = useState(false);
+
   const [selectedSlot, setSelectedSlot] = useState(null);
   const [bookingTopic, setBookingTopic] = useState('');
   const [bookingNotes, setBookingNotes] = useState('');
@@ -62,6 +66,21 @@ const MentorProfile = () => {
 
     fetchProfile();
   }, [id]);
+
+  // Robust safe array getter for frontend
+  const getArray = (val) => {
+    if (!val) return [];
+    if (Array.isArray(val)) return val;
+    if (typeof val === 'string') {
+        try { 
+           const parsed = JSON.parse(val); 
+           return Array.isArray(parsed) ? parsed : [val];
+        } catch(e) { 
+           return [val]; 
+        }
+    }
+    return [];
+  };
 
   const handleBookSession = async () => {
      try {
@@ -198,14 +217,14 @@ const MentorProfile = () => {
                 </div>
                 
                 <p className="text-sm font-medium text-gray-600 mt-2 capitalize">
-                   {mentor.expertise && mentor.expertise.length > 0 ? mentor.expertise.join(', ') : 'Professional Mentor'}
+                   {getArray(mentor.expertise).length > 0 ? getArray(mentor.expertise).join(', ') : 'Professional Mentor'}
                 </p>
              </div>
 
              <div className="flex items-center justify-center sm:justify-end gap-3 pb-4 w-full md:w-auto shrink-0">
-                <button className="h-10 w-10 bg-white border border-gray-200 rounded-lg flex items-center justify-center text-gray-600 hover:bg-gray-50 shadow-sm transition-colors" title="Message Request">
-                   <MessageSquare size={18} />
-                </button>
+                 <button onClick={() => setIsMessageModalOpen(true)} className="h-10 w-10 bg-white border border-gray-200 rounded-lg flex items-center justify-center text-gray-600 hover:bg-gray-50 shadow-sm transition-colors cursor-pointer z-10" title="Message Request">
+                    <MessageSquare size={18} />
+                 </button>
                 <button className="h-10 w-10 bg-white border border-gray-200 rounded-lg flex items-center justify-center text-gray-600 hover:bg-red-50 hover:text-red-500 hover:border-red-200 shadow-sm transition-colors" title="Save Mentor">
                    <Heart size={18} />
                 </button>
@@ -266,7 +285,7 @@ const MentorProfile = () => {
                    <div className="border border-gray-200 rounded-2xl p-6 bg-white shadow-[0_4px_20px_-4px_rgba(0,0,0,0.06)] grid gap-6 grid-cols-1 sm:grid-cols-12 items-center">
                       <div className="sm:col-span-3 text-sm font-semibold text-gray-700">Expertise:</div>
                       <div className="sm:col-span-9 flex flex-wrap gap-2">
-                         {mentor.expertise && mentor.expertise.length > 0 ? mentor.expertise.map((exp, i) => (
+                         {getArray(mentor.expertise).length > 0 ? getArray(mentor.expertise).map((exp, i) => (
                             <span key={i} className="px-3 py-1 bg-gray-100 hover:bg-gray-200 transition-colors text-gray-700 text-xs font-semibold rounded-full border border-gray-200">
                                {exp}
                             </span>
@@ -277,7 +296,7 @@ const MentorProfile = () => {
 
                       <div className="sm:col-span-3 text-sm font-semibold text-gray-700">Disciplines:</div>
                       <div className="sm:col-span-9 flex flex-wrap gap-2">
-                         {mentor.discipline && mentor.discipline.length > 0 ? mentor.discipline.map((disc, i) => (
+                         {getArray(mentor.discipline).length > 0 ? getArray(mentor.discipline).map((disc, i) => (
                             <span key={i} className="px-3 py-1 bg-gray-100 hover:bg-gray-200 transition-colors text-gray-700 text-xs font-semibold rounded-full border border-gray-200">
                                {disc}
                             </span>
@@ -288,7 +307,7 @@ const MentorProfile = () => {
 
                       <div className="sm:col-span-3 text-sm font-semibold text-gray-700">Fluent In:</div>
                       <div className="sm:col-span-9 flex flex-wrap gap-2">
-                         {mentor.fluentIn && mentor.fluentIn.length > 0 ? mentor.fluentIn.map((lang, i) => (
+                         {getArray(mentor.fluentIn).length > 0 ? getArray(mentor.fluentIn).map((lang, i) => (
                             <span key={i} className="px-3 py-1 bg-gray-100 hover:bg-gray-200 transition-colors text-gray-700 text-xs font-semibold rounded-full border border-gray-200">
                                {lang}
                             </span>
@@ -309,7 +328,7 @@ const MentorProfile = () => {
                       </div>
                       
                       <div className="space-y-6">
-                         {mentor.experience && mentor.experience.length > 0 ? mentor.experience.map((exp, i) => (
+                         {getArray(mentor.experience).length > 0 ? getArray(mentor.experience).map((exp, i) => (
                             <div key={i} className="flex gap-4">
                                <div className="h-10 w-10 shrink-0 bg-gray-100 rounded-lg flex items-center justify-center">
                                   <Briefcase size={20} className="text-gray-500" />
@@ -345,7 +364,7 @@ const MentorProfile = () => {
                       </div>
                       
                       <div className="space-y-6">
-                         {mentor.education && mentor.education.length > 0 ? mentor.education.map((edu, i) => (
+                         {getArray(mentor.education).length > 0 ? getArray(mentor.education).map((edu, i) => (
                             <div key={i} className="flex gap-4">
                                <div className="h-10 w-10 shrink-0 bg-gray-100 rounded-lg flex items-center justify-center">
                                   <GraduationCap size={20} className="text-gray-500" />
@@ -432,12 +451,12 @@ const MentorProfile = () => {
                       <p className="text-[10px] text-gray-500 mb-4">Highly discussed topics during sessions</p>
                       
                       <div className="flex flex-col gap-2">
-                         {mentor.expertise && mentor.expertise.length > 0 ? mentor.expertise.slice(0, 3).map((exp, i) => (
+                         {getArray(mentor.expertise).length > 0 ? getArray(mentor.expertise).slice(0, 3).map((exp, i) => (
                             <div key={i} className="bg-purple-50 text-purple-700 text-xs font-semibold py-2 px-3 rounded-md truncate">
                                {exp}
                             </div>
                          )) : <div className="text-xs text-gray-400">No data yet</div>}
-                         {mentor.expertise && mentor.expertise.length > 3 && (
+                         {getArray(mentor.expertise).length > 3 && (
                             <div className="text-xs font-bold text-purple-700 mt-1 hover:underline cursor-pointer">
                                +{mentor.expertise.length - 3} Others
                             </div>
@@ -921,6 +940,74 @@ const MentorProfile = () => {
           )}
        </AnimatePresence>
       </div>
+      {/* Message Request Modal */}
+      <AnimatePresence>
+         {isMessageModalOpen && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+               <motion.div 
+                  initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.95 }}
+                  className="bg-white rounded-2xl w-full max-w-md shadow-2xl overflow-hidden"
+               >
+                  <div className="p-6 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
+                     <div>
+                        <h2 className="text-xl font-bold border-gray-900 border-none">Request to Message</h2>
+                        <p className="text-sm border-gray-500 border-none mt-1">Introduce yourself to {mentor?.user?.name}</p>
+                     </div>
+                     <button onClick={() => setIsMessageModalOpen(false)} className="text-gray-400 hover:text-gray-600 border-none bg-transparent">
+                        <X size={24} />
+                     </button>
+                  </div>
+                  
+                  <div className="p-6">
+                     <label className="block text-sm font-semibold text-gray-700 mb-2">Initial Message</label>
+                     <textarea
+                        value={messageText}
+                        onChange={(e) => setMessageText(e.target.value)}
+                        placeholder="Hi! I'd love to connect to discuss your expertise..."
+                        rows={4}
+                        className="w-full border border-gray-300 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent resize-none"
+                     ></textarea>
+                     <p className="text-xs text-gray-500 mt-2">Connecting with a mentor allows you to chat securely anytime.</p>
+                  </div>
+
+                  <div className="p-6 bg-gray-50 border-t border-gray-100 flex justify-end gap-3">
+                     <button 
+                        onClick={() => setIsMessageModalOpen(false)}
+                        className="px-5 py-2.5 text-sm font-semibold text-gray-600 hover:bg-gray-100 rounded-xl transition-colors border-none bg-transparent"
+                     >
+                        Cancel
+                     </button>
+                     <button 
+                        disabled={!messageText.trim() || isSendingMessage}
+                        onClick={async () => {
+                           setIsSendingMessage(true);
+                           try {
+                              await connectionService.requestConnection(mentor.user_id, { initialMessage: messageText });
+                              addToast("Message request sent successfully!", "success");
+                              setIsMessageModalOpen(false);
+                              setMessageText('');
+                           } catch(err) {
+                              addToast(err.response?.data?.message || "Failed to send request", "error");
+                           } finally {
+                              setIsSendingMessage(false);
+                           }
+                        }}
+                        className={`px-5 py-2.5 text-sm font-bold text-white rounded-xl shadow-md transition-all flex items-center ${
+                           !messageText.trim() || isSendingMessage ? 'bg-gray-400 cursor-not-allowed' : 'bg-primary hover:bg-primary-dark translate-y-[-1px]'
+                        } border-none`}
+                     >
+                        {isSendingMessage ? (
+                           <><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin mr-2" /> Sending...</>
+                        ) : 'Send Request'}
+                     </button>
+                  </div>
+               </motion.div>
+            </div>
+         )}
+      </AnimatePresence>
+
     </div>
   );
 };

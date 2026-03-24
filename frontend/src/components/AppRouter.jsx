@@ -18,7 +18,13 @@ import MenteeOwnProfile from '../pages/MenteeOwnProfile';
 import Playbooks from '../pages/Playbooks';
 import Connections from '../pages/Connections';
 
-const AdminHome = () => <div className="text-2xl font-bold">Admin Dashboard</div>;
+import AdminHome from '../pages/AdminHome';
+import AdminApprovals from '../pages/AdminApprovals';
+import AdminUsers from '../pages/AdminUsers';
+import AdminMentees from '../pages/AdminMentees';
+import AdminRejected from '../pages/AdminRejected';
+import AdminMentors from '../pages/AdminMentors';
+import Notifications from '../pages/Notifications';
 
 const AppRouter = () => {
   return (
@@ -40,6 +46,7 @@ const AppRouter = () => {
              <Route path="messages" element={<Chat />} />
              <Route path="connections" element={<Connections />} />
              <Route path="playbooks" element={<Playbooks />} />
+             <Route path="notifications" element={<Notifications />} />
              <Route path="profile" element={<MenteeOwnProfile />} />
              <Route path="mentor/:id" element={<MentorProfile />} />
              <Route path="settings" element={<div>Settings</div>} />
@@ -55,6 +62,7 @@ const AppRouter = () => {
              <Route path="messages" element={<Chat />} />
              <Route path="connections" element={<Connections />} />
              <Route path="playbooks" element={<Playbooks />} />
+             <Route path="notifications" element={<Notifications />} />
              <Route path="profile" element={<MentorOwnProfile />} />
              <Route path="settings" element={<div>Settings</div>} />
           </Route>
@@ -64,8 +72,11 @@ const AppRouter = () => {
         <Route element={<ProtectedRoute allowedRoles={['admin']} />}>
            <Route path="/admin" element={<DashboardLayout />}>
              <Route path="dashboard" element={<AdminHome />} />
-             <Route path="users" element={<div>Manage Users</div>} />
-             <Route path="approvals" element={<div>Mentor Approvals</div>} />
+             <Route path="users" element={<AdminUsers />} />
+             <Route path="mentors" element={<AdminMentors />} />
+             <Route path="approvals" element={<AdminApprovals />} />
+             <Route path="mentees" element={<AdminMentees />} />
+             <Route path="rejected" element={<AdminRejected />} />
            </Route>
         </Route>
 

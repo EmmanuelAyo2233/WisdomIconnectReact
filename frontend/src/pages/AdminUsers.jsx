@@ -15,12 +15,14 @@ import {
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { adminService } from '../api/services';
+import { useToast } from '../context/ToastContext';
 
 const AdminUsers = () => {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedRole, setSelectedRole] = useState('All');
+  const { addToast } = useToast();
 
   useEffect(() => {
     const fetchUsers = async () => {
@@ -34,7 +36,7 @@ const AdminUsers = () => {
            name: `${u.firstName} ${u.lastName}`,
            email: u.email,
            role: u.role,
-           status: u.isVerified ? 'Active' : 'Pending',
+           status: u.isVerified ? 'Approved' : 'Pending',
            joinedDate: new Date(u.createdAt).toLocaleDateString()
         })));
       } catch (err) {
@@ -52,6 +54,21 @@ const AdminUsers = () => {
     const matchesRole = selectedRole === 'All' || u.role === selectedRole;
     return matchesSearch && matchesRole;
   });
+
+  const handleDelete = async (id, roleName) => {
+    if (!window.confirm("Are you sure you want to delete this user? This action cannot be undone.")) return;
+    try {
+      if (roleName.toLowerCase() === 'mentee') {
+        await adminService.deleteMentee(id);
+      } else {
+        await adminService.deleteUser(id); // Handles mentor & others
+      }
+      addToast("User deleted successfully", "success");
+      setUsers(users.filter(u => u.id !== id));
+    } catch (e) {
+      addToast("Failed to delete user", "error");
+    }
+  };
 
   return (
     <div className="max-w-7xl mx-auto space-y-6">
@@ -144,7 +161,7 @@ const AdminUsers = () => {
                   <td className="px-6 py-4">
                     <div className="flex items-center">
                       <div className={`h-2 w-2 rounded-full mr-2 ${
-                        user.status === 'Active' ? 'bg-green-500' : 
+                        user.status === 'Approved' ? 'bg-green-500' : 
                         user.status === 'Pending' ? 'bg-amber-500' : 'bg-red-500'
                       }`}></div>
                       <span className="text-xs font-medium text-gray-700">{user.status}</span>
@@ -155,9 +172,8 @@ const AdminUsers = () => {
                   </td>
                   <td className="px-6 py-4 text-right">
                     <div className="flex items-center justify-end space-x-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                       <button className="p-1.5 text-gray-400 hover:text-primary transition-colors"><Edit2 size={16} /></button>
-                       <button className="p-1.5 text-gray-400 hover:text-primary transition-colors"><Mail size={16} /></button>
-                       <button className="p-1.5 text-gray-400 lg:group-hover:text-red-600 transition-colors"><Trash2 size={16} /></button>
+                       <button className="p-1.5 text-gray-400 hover:text-primary transition-colors" title="Edit/Email Functionality relies on client implementations"><Mail size={16} /></button>
+                       <button onClick={() => handleDelete(user.id, user.role)} className="p-1.5 text-gray-400 lg:group-hover:text-red-600 transition-colors" title="Delete User"><Trash2 size={16} /></button>
                     </div>
                     <button className="md:hidden p-2 text-gray-400"><MoreVertical size={20} /></button>
                   </td>

@@ -14,6 +14,10 @@ const Register = () => {
     // Mentor specific fields
     bio: '',
     experience: '',
+    expertise: '',
+    certificate: null,
+    // Mentee specific
+    interests: '',
   });
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -21,7 +25,11 @@ const Register = () => {
   const navigate = useNavigate();
 
   const handleChange = (e) => {
-    setFormData({ ...formData, [e.target.name]: e.target.value });
+    if (e.target.name === 'certificate') {
+      setFormData({ ...formData, certificate: e.target.files[0] });
+    } else {
+      setFormData({ ...formData, [e.target.name]: e.target.value });
+    }
   };
 
   const handleSubmit = async (e) => {
@@ -36,23 +44,26 @@ const Register = () => {
     setIsLoading(true);
 
     try {
-      const dataToSubmit = {
-        firstName: formData.firstName,
-        lastName: formData.lastName,
-        email: formData.email,
-        password: formData.password,
-      };
+      const formDataObj = new FormData();
+      formDataObj.append('name', `${formData.firstName} ${formData.lastName}`);
+      formDataObj.append('firstName', formData.firstName);
+      formDataObj.append('lastName', formData.lastName);
+      formDataObj.append('email', formData.email);
+      formDataObj.append('password', formData.password);
+      formDataObj.append('confirmPassword', formData.confirmPassword);
+      formDataObj.append('userType', role);
 
       if (role === 'mentor') {
-        dataToSubmit.bio = formData.bio;
-        dataToSubmit.experience = formData.experience;
-        // Mock expertise
-        dataToSubmit.expertise = ['Leadership', 'Technology'];
-        dataToSubmit.languages = ['English'];
-        const { user } = await registerMentor(dataToSubmit);
-        navigate(`/mentor/dashboard`); // Usually would show a pending approval screen
+        formDataObj.append('bio', formData.bio);
+        formDataObj.append('yearsOfExperience', formData.experience);
+        formDataObj.append('expertise', formData.expertise); // Send as string e.g. "React, Node"
+        if (formData.certificate) formDataObj.append('certificate', formData.certificate);
+        
+        const response = await registerMentor(formDataObj);
+        navigate(`/mentor/dashboard`); 
       } else {
-        const { user } = await registerMentee(dataToSubmit);
+        formDataObj.append('interests', formData.interests);
+        const response = await registerMentee(formDataObj);
         navigate(`/mentee/dashboard`);
       }
     } catch (err) {
@@ -137,11 +148,27 @@ const Register = () => {
                    <label htmlFor="bio" className="block text-sm font-medium text-gray-700 mb-1">Short Bio <span className="text-red-500">*</span></label>
                    <textarea id="bio" name="bio" rows="3" required className="input-field resize-none" value={formData.bio} onChange={handleChange} placeholder="Tell us a little about your professional journey..."></textarea>
                  </div>
+                 <div>
+                   <label htmlFor="experience" className="block text-sm font-medium text-gray-700 mb-1">Years of Experience <span className="text-red-500">*</span></label>
+                   <input id="experience" name="experience" type="number" required className="input-field" value={formData.experience} onChange={handleChange} placeholder="e.g. 10" />
+                 </div>
+                 <div>
+                   <label htmlFor="expertise" className="block text-sm font-medium text-gray-700 mb-1">Expertise (comma separated) <span className="text-red-500">*</span></label>
+                   <input id="expertise" name="expertise" type="text" required className="input-field" value={formData.expertise} onChange={handleChange} placeholder="e.g. UX Design, React, Leadership" />
+                 </div>
                  <div className="sm:col-span-2">
-                   <label htmlFor="experience" className="block text-sm font-medium text-gray-700 mb-1">Years of Experience</label>
-                   <input id="experience" name="experience" type="text" className="input-field" value={formData.experience} onChange={handleChange} placeholder="e.g. 10 years in Software Engineering" />
+                   <label htmlFor="certificate" className="block text-sm font-medium text-gray-700 mb-1">Upload Professional Certificate / Credentials <span className="text-gray-400 font-normal">(PDF/Image)</span></label>
+                   <input id="certificate" name="certificate" type="file" accept=".pdf,.png,.jpg,.jpeg" className="input-field file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-sm file:font-bold file:bg-primary/10 file:text-primary hover:file:bg-primary/20" onChange={handleChange} />
                  </div>
               </>
+            )}
+
+            {/* Mentee Conditional Fields */}
+            {role === 'mentee' && (
+              <div className="sm:col-span-2">
+                 <label htmlFor="interests" className="block text-sm font-medium text-gray-700 mb-1">Topics of Interest (comma separated) <span className="text-red-500">*</span></label>
+                 <input id="interests" name="interests" type="text" required className="input-field" value={formData.interests} onChange={handleChange} placeholder="e.g. Web Development, Career Advice" />
+              </div>
             )}
           </div>
 

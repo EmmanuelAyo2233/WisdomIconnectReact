@@ -14,20 +14,18 @@ const AdminApprovals = () => {
   useEffect(() => {
     const fetchPendingMentors = async () => {
       try {
-        const response = await adminService.getUsers();
-        const allUsers = response.data.users || response.data || [];
-        // Extract pending mentors from the User models
-        const pending = allUsers.filter(u => u.role === 'mentor' && !u.isVerified).map(u => ({
+        const response = await adminService.getPendingMentors();
+        const pending = response.data.map(u => ({
           id: u.id,
-          firstName: u.firstName,
-          lastName: u.lastName,
+          firstName: u.name?.split(' ')[0] || '',
+          lastName: u.name?.split(' ').slice(1).join(' ') || '',
           email: u.email,
-          expertise: u.Mentor?.expertise?.[0] || 'Unspecified',
-          experience: u.Mentor?.experience || 'Not listed',
-          bio: u.Mentor?.bio || u.bio || 'No bio provided.',
-          certificateUrl: '#',
-          linkedin: '#',
-          appliedAt: new Date(u.createdAt).toLocaleDateString()
+          expertise: u.expertise || 'Unspecified',
+          experience: u.experience || 'Not listed',
+          bio: u.bio || 'No bio provided.',
+          certificateUrl: u.certificateUrl || null,
+          linkedin: u.linkedin || '#',
+          appliedAt: new Date(u.createdAt || Date.now()).toLocaleDateString()
         }));
         setPendingMentors(pending);
       } catch (err) {
@@ -45,7 +43,7 @@ const AdminApprovals = () => {
          await adminService.approveUser(id);
          addToast('Approved mentor successfully', 'success');
       } else {
-         await adminService.deleteUser(id);
+         await adminService.rejectUser(id);
          addToast('Rejected mentor successfully', 'success');
       }
       setPendingMentors(pendingMentors.filter(m => m.id !== id));
