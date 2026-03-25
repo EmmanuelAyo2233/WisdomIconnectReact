@@ -97,6 +97,7 @@ const DashboardLayout = () => {
        { path: `/admin/users`, label: 'Users', icon: Users },
        { path: `/admin/mentors`, label: 'Mentors', icon: Star },
        { path: `/admin/approvals`, label: 'Approvals', icon: User },
+       { path: `/admin/playbooks`, label: 'Playbooks', icon: BookOpen },
        { path: `/admin/mentees`, label: 'Mentees', icon: Users },
        { path: `/admin/rejected`, label: 'Rejected', icon: UserX },
     ];

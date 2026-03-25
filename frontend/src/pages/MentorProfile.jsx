@@ -682,7 +682,7 @@ const MentorProfile = () => {
        {/* Redesigned 3-Step Booking Modal */}
        <AnimatePresence>
           {bookingStep > 0 && (
-             <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+             <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 pb-[100px] mt-8">
                 <motion.div 
                    initial={{ opacity: 0 }} 
                    animate={{ opacity: 1 }} 
@@ -695,7 +695,7 @@ const MentorProfile = () => {
                    initial={{ scale: 0.95, opacity: 0, y: 20 }}
                    animate={{ scale: 1, opacity: 1, y: 0 }}
                    exit={{ scale: 0.95, opacity: 0, y: 20 }}
-                   className="bg-white rounded-[24px] shadow-2xl relative z-10 w-full max-w-4xl overflow-hidden flex flex-col md:flex-row min-h-[500px]"
+                   className="bg-white rounded-[24px] shadow-2xl relative z-10 w-full max-w-4xl overflow-hidden max-h-[85vh] flex flex-col md:flex-row min-h-[500px]"
                 >
                    {/* Close Button top right container */}
                    <button 
@@ -729,7 +729,7 @@ const MentorProfile = () => {
                    </div>
 
                    {/* Right Content Area (Steps 1, 2, 3) */}
-                   <div className="p-8 md:w-7/12 flex flex-col bg-white">
+                   <div className="p-8 md:w-7/12 flex flex-col bg-white overflow-y-auto">
                       
                       {bookingStep === 1 && (
                          <div className="flex flex-col h-full animate-in fade-in slide-in-from-right-4 duration-300">
@@ -943,7 +943,7 @@ const MentorProfile = () => {
       {/* Message Request Modal */}
       <AnimatePresence>
          {isMessageModalOpen && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+             <div className="fixed inset-0 z-[150] flex items-center justify-center bg-black/50 p-4 pb-[100px]">
                <motion.div 
                   initial={{ opacity: 0, y: 10, scale: 0.95 }}
                   animate={{ opacity: 1, y: 0, scale: 1 }}

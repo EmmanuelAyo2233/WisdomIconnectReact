@@ -25,6 +25,7 @@ import AdminMentees from '../pages/AdminMentees';
 import AdminRejected from '../pages/AdminRejected';
 import AdminMentors from '../pages/AdminMentors';
 import Notifications from '../pages/Notifications';
+import AdminPlaybooks from '../pages/AdminPlaybooks';
 
 const AppRouter = () => {
   return (
@@ -75,6 +76,7 @@ const AppRouter = () => {
              <Route path="users" element={<AdminUsers />} />
              <Route path="mentors" element={<AdminMentors />} />
              <Route path="approvals" element={<AdminApprovals />} />
+             <Route path="playbooks" element={<AdminPlaybooks />} />
              <Route path="mentees" element={<AdminMentees />} />
              <Route path="rejected" element={<AdminRejected />} />
            </Route>
