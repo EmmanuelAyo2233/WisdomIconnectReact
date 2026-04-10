@@ -14,9 +14,11 @@ import MentorHome from '../pages/MentorHome';
 import MentorAvailability from '../pages/MentorAvailability';
 import MentorProfile from '../pages/MentorProfile';
 import MentorOwnProfile from '../pages/MentorOwnProfile';
+import MenteeProfile from '../pages/MenteeProfile';
 import MenteeOwnProfile from '../pages/MenteeOwnProfile';
 import Playbooks from '../pages/Playbooks';
 import Connections from '../pages/Connections';
+import Call from '../pages/Call';
 
 import AdminHome from '../pages/AdminHome';
 import AdminApprovals from '../pages/AdminApprovals';
@@ -26,6 +28,9 @@ import AdminRejected from '../pages/AdminRejected';
 import AdminMentors from '../pages/AdminMentors';
 import Notifications from '../pages/Notifications';
 import AdminPlaybooks from '../pages/AdminPlaybooks';
+import MentorWallet from '../pages/MentorWallet';
+import AdminWallet from '../pages/AdminWallet';
+import Rankings from '../pages/Rankings';
 
 const AppRouter = () => {
   return (
@@ -50,6 +55,7 @@ const AppRouter = () => {
              <Route path="notifications" element={<Notifications />} />
              <Route path="profile" element={<MenteeOwnProfile />} />
              <Route path="mentor/:id" element={<MentorProfile />} />
+             <Route path="achievements" element={<Rankings />} />
              <Route path="settings" element={<div>Settings</div>} />
           </Route>
         </Route>
@@ -65,7 +71,10 @@ const AppRouter = () => {
              <Route path="playbooks" element={<Playbooks />} />
              <Route path="notifications" element={<Notifications />} />
              <Route path="profile" element={<MentorOwnProfile />} />
+             <Route path="mentee/:id" element={<MenteeProfile />} />
              <Route path="settings" element={<div>Settings</div>} />
+             <Route path="achievements" element={<Rankings />} />
+             <Route path="wallet" element={<MentorWallet />} />
           </Route>
         </Route>
 
@@ -79,7 +88,13 @@ const AppRouter = () => {
              <Route path="playbooks" element={<AdminPlaybooks />} />
              <Route path="mentees" element={<AdminMentees />} />
              <Route path="rejected" element={<AdminRejected />} />
+             <Route path="wallet" element={<AdminWallet />} />
            </Route>
+        </Route>
+
+        {/* Shared Call Route for Mentor and Mentee */}
+        <Route element={<ProtectedRoute allowedRoles={['mentor', 'mentee']} />}>
+           <Route path="/call/:meetingId" element={<Call />} />
         </Route>
 
         {/* Fallback */}

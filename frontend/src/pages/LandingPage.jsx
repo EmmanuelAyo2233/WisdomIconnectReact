@@ -55,12 +55,12 @@ const LandingPage = () => {
 
         {/* Abstract Background pattern */}
         <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full h-full pointer-events-none opacity-5">
-           <svg width="100%" height="100%" fill="none" viewBox="0 0 100 100" preserveAspectRatio="none">
-              <pattern id="grid" width="10" height="10" patternUnits="userSpaceOnUse">
-                 <path d="M 10 0 L 0 0 0 10" fill="none" stroke="currentColor" strokeWidth="0.5" />
-              </pattern>
-              <rect width="100%" height="100%" fill="url(#grid)" />
-           </svg>
+          <svg width="100%" height="100%" fill="none" viewBox="0 0 100 100" preserveAspectRatio="none">
+            <pattern id="grid" width="10" height="10" patternUnits="userSpaceOnUse">
+              <path d="M 10 0 L 0 0 0 10" fill="none" stroke="currentColor" strokeWidth="0.5" />
+            </pattern>
+            <rect width="100%" height="100%" fill="url(#grid)" />
+          </svg>
         </div>
       </div>
 
@@ -68,7 +68,7 @@ const LandingPage = () => {
       <div id="about" className="py-16 sm:py-24 bg-white">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="lg:grid lg:grid-cols-2 lg:gap-16 items-center">
-            <motion.div 
+            <motion.div
               initial={{ opacity: 0, x: -50 }}
               whileInView={{ opacity: 1, x: 0 }}
               viewport={{ once: true }}
@@ -89,27 +89,26 @@ const LandingPage = () => {
                 ))}
               </ul>
             </motion.div>
-            <motion.div 
-               initial={{ opacity: 0, x: 50 }}
-               whileInView={{ opacity: 1, x: 0 }}
-               viewport={{ once: true }}
-               transition={{ duration: 0.6 }}
-               className="mt-10 lg:mt-0 relative"
+            <motion.div
+              initial={{ opacity: 0, x: 50 }}
+              whileInView={{ opacity: 1, x: 0 }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.6 }}
+              className="mt-10 lg:mt-0 relative"
             >
               <div className="aspect-w-4 aspect-h-3 rounded-2xl overflow-hidden shadow-2xl bg-gray-200">
-                 {/* Placeholder for African imagery */}
-                 <div className="w-full h-[400px] bg-gradient-to-br from-primary/80 to-secondary flex items-center justify-center p-8">
-                    <h3 className="text-white text-3xl font-bold text-center leading-tight">
-                       "To go fast, go alone.<br/>To go far, go together."
-                    </h3>
-                 </div>
+
+                <div className="w-full h-[400px] bg-gradient-to-br from-primary/80 to-secondary flex items-center justify-center p-8">
+                  <h3 className="text-white text-3xl font-bold text-center leading-tight">
+                    "To go fast, go alone.<br />To go far, go together."
+                  </h3>
+                </div>
               </div>
             </motion.div>
           </div>
         </div>
       </div>
 
-      {/* Features Section */}
       <div id="features" className="py-16 sm:py-24 bg-gray-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center">
@@ -122,8 +121,8 @@ const LandingPage = () => {
           <div className="mt-20">
             <div className="grid grid-cols-1 gap-12 sm:grid-cols-2 lg:grid-cols-4">
               {features.map((feature, index) => (
-                <motion.div 
-                  key={feature.name} 
+                <motion.div
+                  key={feature.name}
                   className="card p-6 text-center hover:-translate-y-1 transition-transform duration-300"
                   initial={{ opacity: 0, y: 20 }}
                   whileInView={{ opacity: 1, y: 0 }}
@@ -144,25 +143,25 @@ const LandingPage = () => {
 
       {/* Testimonials (Stubbed) */}
       <div className="py-16 sm:py-24 bg-white">
-         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
-           <h2 className="text-3xl font-extrabold text-gray-900 tracking-tight sm:text-4xl mb-12">
-             What People Are Saying
-           </h2>
-           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-             {[1, 2, 3].map((i) => (
-               <div key={i} className="card p-8 bg-gray-50 border border-gray-100">
-                  <p className="text-gray-600 italic mb-6">"WisdomIconnect completely changed my career trajectory. Finding a mentor who understood my background was invaluable."</p>
-                  <div className="flex items-center justify-center">
-                    <div className="h-10 w-10 rounded-full bg-primary/20 text-primary flex items-center justify-center font-bold mr-3">U{i}</div>
-                    <div className="text-left">
-                       <p className="text-sm font-semibold text-gray-900">User {i}</p>
-                       <p className="text-xs text-gray-500">Software Engineer</p>
-                    </div>
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+          <h2 className="text-3xl font-extrabold text-gray-900 tracking-tight sm:text-4xl mb-12">
+            What People Are Saying
+          </h2>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+            {[1, 2, 3].map((i) => (
+              <div key={i} className="card p-8 bg-gray-50 border border-gray-100">
+                <p className="text-gray-600 italic mb-6">"WisdomIconnect completely changed my career trajectory. Finding a mentor who understood my background was invaluable."</p>
+                <div className="flex items-center justify-center">
+                  <div className="h-10 w-10 rounded-full bg-primary/20 text-primary flex items-center justify-center font-bold mr-3">U{i}</div>
+                  <div className="text-left">
+                    <p className="text-sm font-semibold text-gray-900">User {i}</p>
+                    <p className="text-xs text-gray-500">Software Engineer</p>
                   </div>
-               </div>
-             ))}
-           </div>
-         </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
 
       {/* CTA Section */}

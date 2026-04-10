@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
+import { useLocation, Link } from 'react-router-dom';
+import { motion } from 'framer-motion';
 import { useAuth } from '../context/AuthContext';
-import { Link } from 'react-router-dom';
 import { MessageSquare, Calendar, Search, Users, CheckCircle, XCircle } from 'lucide-react';
 import { connectionService } from '../api/services';
 import { useToast } from '../context/ToastContext';
@@ -8,9 +9,19 @@ import { useToast } from '../context/ToastContext';
 const Connections = () => {
   const { user } = useAuth();
   const { addToast } = useToast();
+  const location = useLocation();
+  const searchParams = new URLSearchParams(location.search);
+  const initialSearch = searchParams.get('search') || '';
+
   const [connections, setConnections] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('accepted');
+  const [searchTerm, setSearchTerm] = useState(initialSearch);
+
+  useEffect(() => {
+     const newSearch = searchParams.get('search') || '';
+     setSearchTerm(newSearch);
+  }, [location.search]);
 
   const fetchConnections = async () => {
     try {
@@ -42,41 +53,74 @@ const Connections = () => {
   };
 
   // derived arrays
-  const acceptedConnections = connections.filter(c => c.status === 'accepted');
-  const pendingConnections = connections.filter(c => c.status === 'pending');
+  const acceptedConnections = connections.filter(c => {
+    if (c.status !== 'accepted') return false;
+    const isMentor = (user.userType || user.role) === 'mentor';
+    const targetUser = isMentor ? c.mentee?.user : c.mentor?.user;
+    return (targetUser?.name || '').toLowerCase().includes(searchTerm.toLowerCase());
+  });
+  
+  const pendingConnections = connections.filter(c => {
+    if (c.status !== 'pending') return false;
+    const isMentor = (user.userType || user.role) === 'mentor';
+    const targetUser = isMentor ? c.mentee?.user : c.mentor?.user;
+    return (targetUser?.name || '').toLowerCase().includes(searchTerm.toLowerCase());
+  });
   const userType = user.userType || user.role;
 
   return (
     <div className="max-w-7xl mx-auto space-y-6 px-4 md:px-0">
       
-      <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex flex-col md:flex-row md:items-center justify-between gap-4">
-         <div>
-            <h1 className="text-2xl font-bold text-gray-900">My Connections</h1>
-            <p className="text-gray-500 text-sm mt-1">Manage your mentorship network and messaging access.</p>
-         </div>
-         <div className="flex-1 max-w-sm relative">
-            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-              <Search className="h-5 w-5 text-gray-400" />
-            </div>
-            <input
-              type="text"
-              className="w-full pl-10 h-10 py-2 border border-gray-200 rounded-lg text-sm bg-gray-50 focus:outline-none focus:ring-1 focus:ring-primary focus:bg-white transition-colors"
-              placeholder="Search connections..."
-            />
-         </div>
-      </div>
+      <motion.div 
+        initial={{ opacity: 0, y: -20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5 }}
+        className="bg-primary rounded-[2rem] p-8 md:p-12 text-white shadow-2xl relative overflow-hidden flex flex-col md:flex-row items-center justify-between gap-8 border border-white/10"
+      >
+        <div className="absolute top-0 right-0 w-64 h-64 bg-white/10 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2 pointer-events-none"></div>
+        <div className="absolute bottom-0 left-0 w-64 h-64 bg-white/10 rounded-full blur-3xl translate-y-1/2 -translate-x-1/2 pointer-events-none"></div>
+        
+        <div className="relative z-10 md:w-1/2 flex flex-col gap-4 text-center md:text-left">
+          <h1 className="text-4xl md:text-5xl font-black text-white leading-tight tracking-tight">
+            Manage <span className="text-transparent bg-clip-text bg-gradient-to-r from-white to-white/70">Connections</span>
+          </h1>
+          <p className="text-white/90 text-lg md:text-xl font-medium max-w-lg mx-auto md:mx-0">
+            Monitor and grow your mentorship network and messaging access.
+          </p>
+        </div>
+        
+        <div className="relative z-10 w-full md:w-1/2 max-w-lg mx-auto">
+           <div className="relative group">
+              <div className="absolute inset-y-0 left-0 pl-5 flex items-center pointer-events-none">
+                <Search className="h-6 w-6 text-gray-400 group-focus-within:text-primary transition-colors duration-300" />
+              </div>
+              <input
+                type="text"
+                className="block w-full pl-14 pr-6 py-5 bg-white border border-white/20 rounded-3xl text-gray-900 placeholder-gray-400 text-base md:text-lg font-bold shadow-2xl focus:outline-none focus:ring-4 focus:ring-primary/30 transition-all duration-300 placeholder:font-semibold"
+                placeholder="Search connections..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+              />
+              <div className="absolute inset-y-0 right-0 pr-3 flex items-center">
+                 <button className="bg-primary hover:bg-primary-dark transition-colors text-white rounded-2xl px-5 py-3 text-sm font-bold shadow-md hidden sm:block border border-white/20">
+                    Search
+                 </button>
+              </div>
+           </div>
+        </div>
+      </motion.div>
 
       {userType === 'mentor' && (
          <div className="flex border-b border-gray-200 space-x-6">
             <button 
                onClick={() => setActiveTab('accepted')}
-               className={`py-3 text-sm font-semibold border-b-2 transition-colors ${activeTab === 'accepted' ? 'border-primary text-[#0A2640]' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+               className={`py-3 text-sm font-semibold border-b-2 transition-colors ${activeTab === 'accepted' ? 'border-primary text-primary' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
             >
                Active Connections ({acceptedConnections.length})
             </button>
             <button 
                onClick={() => setActiveTab('pending')}
-               className={`py-3 text-sm font-semibold border-b-2 transition-colors flex items-center gap-2 ${activeTab === 'pending' ? 'border-primary text-[#0A2640]' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
+               className={`py-3 text-sm font-semibold border-b-2 transition-colors flex items-center gap-2 ${activeTab === 'pending' ? 'border-primary text-primary' : 'border-transparent text-gray-500 hover:text-gray-700'}`}
             >
                Pending Requests
                {pendingConnections.length > 0 && (
@@ -110,15 +154,15 @@ const Connections = () => {
                
                return (
                <div key={conn.id} className="bg-white rounded-xl shadow-sm border border-orange-100 p-6 flex flex-col items-center text-center">
-                  <div className="h-16 w-16 rounded-full bg-orange-50 text-orange-500 flex items-center justify-center text-xl font-bold mb-4 border border-orange-100 overflow-hidden">
+                  <Link to={`/mentor/mentee/${targetUser.id}`} state={{ profile: conn.mentee }} className="h-16 w-16 rounded-full bg-orange-50 text-orange-500 flex items-center justify-center text-xl font-bold mb-4 border border-orange-100 overflow-hidden hover:ring-2 hover:ring-orange-300 transition-all focus:outline-none" title="View Profile">
                      {targetUser?.picture && targetUser.picture.startsWith('http') ? (
                         <img src={targetUser.picture} alt={name} className="h-full w-full object-cover" />
                      ) : (
                         name.charAt(0)
                      )}
-                  </div>
+                  </Link>
                   <h3 className="text-lg font-bold text-gray-900">
-                     {name}
+                     <Link to={`/mentor/mentee/${targetUser.id}`} state={{ profile: conn.mentee }} className="hover:text-primary hover:underline transition-colors focus:outline-none">{name}</Link>
                   </h3>
                   <p className="text-xs font-semibold text-orange-500 uppercase tracking-widest mt-1 mb-2">
                      Message Request
@@ -153,29 +197,29 @@ const Connections = () => {
                const name = targetUser?.name || "Unknown User";
                
                return (
-               <div key={conn.id} className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 flex flex-col items-center text-center hover:shadow-md transition-shadow group relative overflow-hidden">
-                  <div className="h-1 bg-green-400 absolute top-0 left-0 right-0" />
-                  <div className="h-20 w-20 rounded-full bg-primary/10 text-primary flex items-center justify-center text-2xl font-bold mb-4 overflow-hidden border-2 border-white shadow-sm">
+               <div key={conn.id} className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 flex flex-col items-center text-center hover:shadow-xl hover:-translate-y-1 transition-all duration-300 group relative overflow-hidden">
+                  <div className="absolute -top-10 -right-10 w-32 h-32 bg-primary/5 rounded-full group-hover:bg-primary/10 transition-colors pointer-events-none" />
+                  
+                  <Link to={isMentor ? `/mentor/mentee/${targetUser.id}` : `/mentee/mentor/${targetUser.id}`} state={{ profile: isMentor ? conn.mentee : conn.mentor }} className="h-24 w-24 rounded-full bg-gradient-to-br from-primary/10 to-primary/30 text-primary flex items-center justify-center text-3xl font-black mb-5 overflow-hidden shadow-sm ring-4 ring-white hover:ring-primary/30 relative z-10 transition-transform group-hover:scale-105 duration-300 focus:outline-none" title="View Profile">
                      {targetUser?.picture && targetUser.picture.startsWith('http') ? (
                         <img src={targetUser.picture} alt={name} className="h-full w-full object-cover" />
                      ) : (
                         name.charAt(0)
                      )}
-                  </div>
-                  <h3 className="text-lg font-bold text-gray-900 group-hover:text-primary transition-colors">
-                     {name}
+                  </Link>
+                  <h3 className="text-xl font-black text-gray-900 group-hover:text-primary transition-colors relative z-10 leading-tight">
+                     <Link to={isMentor ? `/mentor/mentee/${targetUser.id}` : `/mentee/mentor/${targetUser.id}`} state={{ profile: isMentor ? conn.mentee : conn.mentor }} className="focus:outline-none">{name}</Link>
                   </h3>
-                  <p className="text-xs font-semibold text-primary uppercase tracking-widest mt-1 mb-4">
-                     {isMentor ? 'Mentee' : 'Mentor'}
+                  <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mt-1.5 mb-5 relative z-10">
+                     {isMentor ? 'Mentee Connection' : 'Mentor Connection'}
                   </p>
                   
-                  <div className="flex space-x-3 w-full border-t border-gray-100 pt-4">
-                     {/* The Chat link relies on query parameter `user` which maps to the other user's user_id in the DB */}
-                     <Link to={`/${userType}/messages?user=${targetUser?.id}`} className="flex-1 py-2 px-3 bg-gray-50 hover:bg-primary/10 text-[#0A2640] text-sm font-bold rounded-lg flex items-center justify-center transition-colors border border-gray-200">
+                  <div className="flex space-x-3 w-full border-t border-gray-100 pt-5 relative z-10">
+                     <Link to={`/${userType}/messages?user=${targetUser?.id}`} className="flex-1 py-2.5 px-3 bg-gray-50 hover:bg-primary hover:text-white text-gray-700 text-sm font-bold rounded-xl flex items-center justify-center transition-all duration-300 border border-gray-200 hover:border-primary shadow-sm">
                         <MessageSquare size={16} className="mr-2" /> Message
                      </Link>
                      {!isMentor && (
-                        <Link to={`/mentee/mentor/${targetUser?.id}`} className="bg-primary hover:bg-primary-dark text-white rounded-lg flex items-center justify-center px-4 transition-colors">
+                        <Link to={`/mentee/mentor/${targetUser?.id}`} className="bg-white hover:bg-gray-50 border border-gray-200 text-gray-700 hover:text-primary rounded-xl flex items-center justify-center px-4 transition-colors shadow-sm" title="View Profile">
                            <Calendar size={18} />
                         </Link>
                      )}

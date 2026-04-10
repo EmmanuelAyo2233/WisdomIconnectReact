@@ -11,7 +11,7 @@ export const SocketProvider = ({ children }) => {
   useEffect(() => {
     if (user) {
       // Connect to the /chat namespace as specified in docs
-      const token = localStorage.getItem('token') || '';
+      const token = localStorage.getItem('activeToken') || '';
       const newSocket = io(import.meta.env.VITE_SOCKET_URL || 'http://localhost:5000/chat', {
         withCredentials: true,
         transports: ['websocket', 'polling'],

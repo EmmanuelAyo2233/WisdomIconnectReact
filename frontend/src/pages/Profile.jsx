@@ -92,6 +92,15 @@ const Profile = () => {
                      <span className="flex items-center capitalize bg-primary/10 text-primary px-2.5 py-0.5 rounded-full font-semibold">
                         {user?.role}
                      </span>
+                     {user?.role === 'mentor' && (
+                        <span className={`flex items-center capitalize px-2.5 py-0.5 rounded-full font-bold shadow-sm border ${
+                           user?.mentorLevel === 'gold' ? 'bg-yellow-100 text-yellow-800 border-yellow-300' :
+                           user?.mentorLevel === 'verified' ? 'bg-green-100 text-green-800 border-green-300' :
+                           'bg-slate-100 text-slate-800 border-slate-300'
+                        }`}>
+                           ★ {user?.mentorLevel || 'Starter'} Mentor
+                        </span>
+                     )}
                      <span className="flex items-center"><MapPin size={16} className="mr-1 text-gray-400" /> Remote, Worldwide</span>
                   </div>
                </div>

@@ -6,22 +6,54 @@ export const mentorService = {
   updateMentorProfile: (id, data) => api.put(`/mentors/${id}`, data),
 };
 
+export const menteeService = {
+  getMenteeById: (id) => api.get(`/user/mentee/${id}`),
+};
+
 export const bookingService = {
   createBooking: (mentorUserId, data) => api.post(`/appointments/book/${mentorUserId}`, data),
   getMenteeBookings: () => api.get('/appointments/mentee'),
   getMentorBookings: () => api.get('/appointments/mentor'),
   updateBookingStatus: (id, action) => api.put(`/appointments/${id}/${action}`), // 'accept' or 'reject'
   cancelBooking: (id) => api.put(`/appointments/${id}/cancel`),
-  deleteBooking: (id) => api.delete(`/appointments/${id}`),
   getAvailability: (mentorUserId) => api.get(`/availability/${mentorUserId}`),
+  getOwnAvailability: () => api.get('/availability'),
   createAvailability: (data) => api.post('/availability', data),
   updateAvailability: (id, data) => api.put(`/availability/${id}`, data),
   deleteAvailability: (id) => api.delete(`/availability/${id}`),
+  completeSession: (id) => api.post(`/sessions/${id}/complete`),
+  submitReview: (id, data) => api.post(`/sessions/${id}/review`, data),
+  submitCommendation: (id, data) => api.post(`/sessions/${id}/commendation`, data),
 };
 
 export const chatService = {
-  getMessages: (userId) => api.get(`/chat/messages/${userId}`),
-  sendMessage: (data) => api.post('/chat/messages', data),
+  getMessages: (connectionId) => api.get(`/chat/${connectionId}/messages`),
+  sendMessage: (connectionId, data) => api.post(`/chat/${connectionId}/messages`, data),
+  uploadFile: (connectionId, formData) => api.post(`/chat/${connectionId}/upload`, formData),
+  clearConversation: (connectionId) => api.delete(`/chat/${connectionId}/clear`),
+};
+
+export const playbookService = {
+  getPlaybooks: () => api.get('/playbooks'),
+  getMentorPlaybooks: () => api.get('/playbooks/mine'),
+  getPlaybookDetails: (id) => api.get(`/playbooks/${id}`),
+  createPlaybook: (data) => api.post('/playbooks/create', data),
+  updatePlaybook: (id, data) => api.put(`/playbooks/${id}`, data),
+  deletePlaybook: (id) => api.delete(`/playbooks/${id}`),
+  likePlaybook: (id) => api.post(`/playbooks/${id}/like`),
+  savePlaybook: (id) => api.post(`/playbooks/${id}/save`),
+  getSavedPlaybooks: () => api.get('/playbooks/user/saved'),
+  getPlaybookComments: (id) => api.get(`/playbooks/${id}/comments`),
+  getPlaybookReplies: (id, commentId, page = 1) => api.get(`/playbooks/${id}/comments/${commentId}/replies?page=${page}&limit=5`),
+  addPlaybookComment: (id, data) => api.post(`/playbooks/${id}/comments`, data),
+  updatePlaybookComment: (id, commentId, data) => api.put(`/playbooks/${id}/comments/${commentId}`, data),
+  deletePlaybookComment: (id, commentId) => api.delete(`/playbooks/${id}/comments/${commentId}`),
+};
+
+export const messageRequestService = {
+  sendMessageRequest: (data) => api.post('/message-requests/send', data),
+  getMentorMessageRequests: () => api.get('/message-requests/mentor'),
+  respondToMessageRequest: (requestId, status) => api.put(`/message-requests/${requestId}/respond`, { status }),
 };
 
 export const postService = {
@@ -56,4 +88,11 @@ export const connectionService = {
   requestConnection: (mentorUserId, data) => api.post(`/connections/request/${mentorUserId}`, data),
   respondConnection: (connectionId, status) => api.put(`/connections/respond/${connectionId}`, { status }),
   getConnections: () => api.get('/connections'),
+};
+
+export const paymentService = {
+  getWallet: () => api.get('/payments/wallet'),
+  getAdminWallet: () => api.get('/payments/wallet/admin'),
+  withdrawFunds: (amount) => api.post('/payments/wallet/withdraw', { amount }),
+  getTransactions: () => api.get('/payments/transactions'),
 };

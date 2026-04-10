@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Star, CheckCircle, X, Linkedin, MessageSquare, Heart, MoreHorizontal, Briefcase, GraduationCap, Calendar, Clock, ChevronLeft, ChevronRight, DollarSign } from 'lucide-react';
-import { mentorService, bookingService, connectionService } from '../api/services';
+import { Star, CheckCircle, X, Linkedin, MessageSquare, Heart, MoreHorizontal, Briefcase, GraduationCap, Calendar, Clock, ChevronLeft, ChevronRight, DollarSign, Send, Users } from 'lucide-react';
+import { mentorService, bookingService, connectionService, messageRequestService } from '../api/services';
 import { useToast } from '../context/ToastContext';
+import { useAuth } from '../context/AuthContext';
+import PaystackPop from '@paystack/inline-js';
 
 const MentorProfile = () => {
   const { id } = useParams();
@@ -11,6 +13,7 @@ const MentorProfile = () => {
   const { addToast } = useToast();
   const [mentor, setMentor] = useState(null);
   const [loading, setLoading] = useState(true);
+  const { user } = useAuth();
   
   const [activeTab, setActiveTab] = useState('Overview');
   const [isBioExpanded, setIsBioExpanded] = useState(false);
@@ -25,13 +28,17 @@ const MentorProfile = () => {
   const [selectedSlot, setSelectedSlot] = useState(null);
   const [bookingTopic, setBookingTopic] = useState('');
   const [bookingNotes, setBookingNotes] = useState('');
+  const [isProcessingPayment, setIsProcessingPayment] = useState(false);
+
+  const [showAllExperience, setShowAllExperience] = useState(false);
+  const [showAllEducation, setShowAllEducation] = useState(false);
 
   useEffect(() => {
     const fetchProfile = async () => {
       try {
         const profileRes = await mentorService.getMentorById(id);
         let mentorData = null;
-        if (profileRes.status === 200) {
+        if (profileRes.status === 200 || (profileRes.data && profileRes.data.status === 'success')) {
            mentorData = profileRes.data.data;
         }
 
@@ -74,29 +81,86 @@ const MentorProfile = () => {
     if (typeof val === 'string') {
         try { 
            const parsed = JSON.parse(val); 
-           return Array.isArray(parsed) ? parsed : [val];
+           if (typeof parsed === 'string') {
+               try {
+                  const dp = JSON.parse(parsed);
+                  if (Array.isArray(dp)) return dp;
+               } catch(e) {}
+               return parsed.split(',').map(s=>s.trim()).filter(Boolean);
+           }
+           if (Array.isArray(parsed)) return parsed;
+           return [parsed];
         } catch(e) { 
-           return [val]; 
+           return val.split(',').map(s=>s.trim()).filter(Boolean); 
         }
     }
     return [];
   };
 
   const handleBookSession = async () => {
-     try {
-        await bookingService.createBooking(mentor.user_id, {
-            date: selectedSlot.date,
-            startTime: selectedSlot.startTime,
-            endTime: selectedSlot.endTime,
-            topic: bookingTopic || 'Mentorship Session',
-            goals: bookingNotes
+     // Strict topic capture: 
+     const isFlexible = selectedSlot?.session_type === 'topic' || selectedSlot?.title === 'Selectable Topic';
+     const finalTopic = isFlexible 
+         ? bookingTopic 
+         : (selectedSlot?.session_title || selectedSlot?.title || 'Mentorship Session');
+
+     if (isFlexible && (!finalTopic || finalTopic.trim() === '')) {
+         addToast("Please select a topic before continuing.", "error");
+         return;
+     }
+
+     if (selectedSlot.price > 0) {
+        const paystack = new PaystackPop();
+        paystack.newTransaction({
+            key: 'pk_test_91f1bda114b1c495c81c3e08494fbac7573d3f8a',
+            email: user?.email || 'test@example.com',
+            amount: selectedSlot.price * 100, // convert NGN to kobo
+            currency: 'NGN',
+            reference: `mentx_${new Date().getTime()}_${Math.floor(Math.random() * 1000)}`,
+            onSuccess: async (transaction) => {
+                setIsProcessingPayment(true);
+                try {
+                    await bookingService.createBooking(mentor.user_id, {
+                        date: selectedSlot.date,
+                        startTime: selectedSlot.startTime,
+                        endTime: selectedSlot.endTime,
+                        topic: finalTopic,
+                        goals: bookingNotes,
+                        reference: transaction.reference
+                    });
+                    addToast("Payment successful! Session booked.", "success");
+                    setBookingStep(0);
+                    navigate('/mentee/bookings');
+                } catch (err) {
+                    console.error("Booking failed post-payment", err);
+                    addToast(err.response?.data?.message || "Failed to confirm booking on our end.", "error");
+                } finally {
+                    setIsProcessingPayment(false);
+                }
+            },
+            onCancel: () => {
+                addToast("Payment was canceled.", "error");
+            }
         });
-        addToast("Session booked successfully!", "success");
-        setBookingStep(0);
-        navigate('/mentee/bookings');
-     } catch (err) {
-        console.error("Booking failed", err);
-        addToast(err.response?.data?.message || "Booking failed", "error");
+     } else {
+        setIsProcessingPayment(true);
+        try {
+           await bookingService.createBooking(mentor.user_id, {
+               date: selectedSlot.date,
+               startTime: selectedSlot.startTime,
+               endTime: selectedSlot.endTime,
+               topic: finalTopic,
+               goals: bookingNotes
+           });
+           addToast("Session booked successfully!", "success");
+           setBookingStep(0);
+           navigate('/mentee/bookings');
+        } catch (err) {
+           console.error("Booking failed", err);
+           addToast(err.response?.data?.message || "Booking failed", "error");
+        } finally {
+           setIsProcessingPayment(false);
+        }
      }
   };
 
@@ -105,16 +169,16 @@ const MentorProfile = () => {
 
   const tabs = [
      { id: 'Overview', label: 'Overview' },
-     { id: 'Reviews', label: `Reviews ${mentor.reviews || 0}` },
+     { id: 'Reviews', label: `Reviews (${mentor.reviews ? mentor.reviews.length : 0})` },
      { id: 'Achievements', label: 'Achievements' },
-     { id: 'GroupSessions', label: `Group Sessions ${mentor.groupSessions || 0}` }
+     { id: 'GroupSessions', label: `Group Sessions (${mentor.groupSessions ? mentor.groupSessions.length : 0})` }
   ];
 
   const generateDatesArray = () => {
      const dates = [];
      const today = new Date();
      today.setHours(0,0,0,0);
-     for (let i = 0; i < 30; i++) {
+     for (let i = 1; i <= 30; i++) {
         const d = new Date(today);
         d.setDate(today.getDate() + i);
         dates.push(d);
@@ -141,7 +205,7 @@ const MentorProfile = () => {
      const todayString = `${todayYear}-${todayMonth}-${todayDay}`;
      
      const isToday = todayString === dateString;
-     const isPast = !isToday && dateObj < new Date(new Date().setHours(0, 0, 0, 0));
+     const isPast = isToday || dateObj < new Date(new Date().setHours(0, 0, 0, 0));
      
      return { dateString, hasSlots, isToday, isPast };
   };
@@ -178,17 +242,18 @@ const MentorProfile = () => {
       <div className="max-w-7xl mx-auto space-y-6 pb-20">
          
          {/* Hero / Cover Photo Banner */}
-       <div className="h-48 md:h-64 w-full bg-[#2e5d32] rounded-none md:rounded-b-2xl relative overflow-hidden shadow-sm">
+       <div className="h-48 md:h-64 w-full bg-[#2e5d32] rounded-none md:rounded-b-3xl relative overflow-hidden shadow-sm">
           <img src="https://images.unsplash.com/photo-1518531933037-91b2f5f229cc?q=80&w=1200" alt="Cover" className="w-full h-full object-cover opacity-60 mix-blend-overlay" />
+          <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent" />
        </div>
 
        {/* Profile Header Block */}
-       <div className="px-4 md:px-12 relative z-10 flex flex-col md:flex-row md:items-end justify-between gap-4 max-w-6xl mx-auto">
+       <div className="px-4 md:px-12 relative z-10 flex flex-col md:flex-row md:items-end justify-between gap-6 max-w-6xl mx-auto">
           
           <div className="flex flex-col sm:flex-row items-center sm:items-end gap-6 w-full">
              {/* Overlapping Avatar */}
              <div className="-mt-16 sm:-mt-20 relative">
-                <div className="h-32 w-32 sm:h-40 sm:w-40 rounded-full border-[6px] border-white bg-white shadow-xl overflow-hidden flex items-center justify-center shrink-0">
+                <div className="h-32 w-32 sm:h-44 sm:w-44 rounded-full border-[6px] border-white bg-white shadow-2xl overflow-hidden flex items-center justify-center shrink-0">
                    {mentor.picture && mentor.picture !== "http://localhost:5000/uploads/default.png" ? (
                      <img src={mentor.picture} alt={mentor.name} className="h-full w-full object-cover" />
                    ) : (
@@ -197,54 +262,53 @@ const MentorProfile = () => {
                      </span>
                    )}
                 </div>
+                {/* Status Indicator overlapping avatar */}
+                <div className={`absolute bottom-3 right-3 h-6 w-6 rounded-full border-4 border-white ${mentor.isOnline ? 'bg-green-500' : 'bg-red-500'}`} />
              </div>
 
              <div className="text-center sm:text-left pb-2 flex-1">
                 <div className="flex flex-col sm:flex-row items-center sm:items-center gap-4">
-                   <div className="flex items-center gap-2">
-                      <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">{mentor.name}</h1>
-                      <span className="text-xs font-bold text-gray-500 uppercase">{mentor.countryCode}</span>
-                   </div>
-                   
-                   {/* Glowing Available / Unavailable Bubble */}
-                   <div className={`flex items-center justify-center h-16 w-16 sm:h-20 sm:w-20 rounded-full text-white text-xs font-bold leading-tight text-center shadow-2xl transition-all ${
-                      mentor.isOnline 
-                         ? 'bg-gradient-to-br from-green-400 to-green-600 shadow-green-500/50 border-2 border-white' 
-                         : 'bg-gradient-to-br from-[#ff5e4d] to-[#ff3b28] shadow-red-500/50 border-2 border-white'
-                   }`}>
-                      {mentor.isOnline ? 'Available' : 'Unavailable'}
+                   <div className="flex flex-col sm:flex-row items-center gap-2">
+                      <h1 className="text-2xl sm:text-4xl font-extrabold text-gray-900 tracking-tight">{mentor.name}</h1>
+                      <div className="flex items-center gap-2">
+                         <span className="text-xs font-bold text-gray-500 bg-gray-100 px-2 py-1 rounded-md uppercase">{mentor.countryCode}</span>
+                         {mentor.isOnline && <span className="flex items-center text-[10px] font-bold text-green-600 uppercase tracking-widest"><span className="h-1.5 w-1.5 bg-green-500 rounded-full mr-1.5 animate-pulse" /> Online Now</span>}
+                      </div>
                    </div>
                 </div>
                 
-                <p className="text-sm font-medium text-gray-600 mt-2 capitalize">
-                   {getArray(mentor.expertise).length > 0 ? getArray(mentor.expertise).join(', ') : 'Professional Mentor'}
+                <p className="text-sm font-bold text-primary mt-2 flex items-center gap-2">
+                   {mentor.occupation || mentor.role || 'Professional Mentor'}
                 </p>
              </div>
 
              <div className="flex items-center justify-center sm:justify-end gap-3 pb-4 w-full md:w-auto shrink-0">
-                 <button onClick={() => setIsMessageModalOpen(true)} className="h-10 w-10 bg-white border border-gray-200 rounded-lg flex items-center justify-center text-gray-600 hover:bg-gray-50 shadow-sm transition-colors cursor-pointer z-10" title="Message Request">
-                    <MessageSquare size={18} />
-                 </button>
-                <button className="h-10 w-10 bg-white border border-gray-200 rounded-lg flex items-center justify-center text-gray-600 hover:bg-red-50 hover:text-red-500 hover:border-red-200 shadow-sm transition-colors" title="Save Mentor">
-                   <Heart size={18} />
+                <button 
+                  onClick={() => setIsMessageModalOpen(true)}
+                  className="bg-primary hover:bg-primary-dark text-white px-8 h-12 rounded-full font-bold shadow-lg shadow-primary/20 transition-all transform hover:-translate-y-1 flex items-center justify-center whitespace-nowrap"
+                >
+                   <MessageSquare size={18} className="mr-2" /> Request to Message
                 </button>
-                <button className="h-10 w-10 bg-white border border-gray-200 rounded-lg flex items-center justify-center text-gray-600 hover:bg-gray-50 shadow-sm transition-colors" title="More Options">
-                   <MoreHorizontal size={18} />
+                <button className="h-12 w-12 bg-white border border-gray-200 rounded-full flex items-center justify-center text-gray-600 hover:bg-red-50 hover:text-red-500 hover:border-red-200 shadow-md transition-all">
+                   <Heart size={20} />
+                </button>
+                <button className="h-12 w-12 bg-white border border-gray-200 rounded-full flex items-center justify-center text-gray-600 hover:bg-gray-100 shadow-md transition-all">
+                   <MoreHorizontal size={20} />
                 </button>
              </div>
           </div>
        </div>
 
        {/* Tabs Menu */}
-       <div className="border-b border-gray-200 px-4 sm:px-8 flex overflow-x-auto scrollbar-hide">
+       <div className="border-b border-gray-200 px-4 sm:px-8 mt-4 flex overflow-x-auto scrollbar-hide bg-white sticky top-0 z-30">
           {tabs.map(tab => (
              <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={`whitespace-nowrap py-4 px-4 font-semibold text-sm border-b-2 transition-colors ${
+                className={`whitespace-nowrap py-5 px-6 font-bold text-sm border-b-2 transition-all ${
                    activeTab === tab.id 
-                      ? 'border-primary text-gray-900' 
-                      : 'border-transparent text-gray-500 hover:text-gray-700'
+                      ? 'border-primary text-primary' 
+                      : 'border-transparent text-gray-400 hover:text-gray-700'
                 }`}
              >
                 {tab.label}
@@ -253,329 +317,310 @@ const MentorProfile = () => {
        </div>
 
        {/* Tab Content Area */}
-       <div className="px-4 sm:px-8 pt-4">
+       <div className="px-4 sm:px-8 pt-8 pb-20 lg:pb-8">
           {activeTab === 'Overview' && (
-             <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+             <div className="flex flex-col-reverse lg:grid lg:grid-cols-12 gap-10">
                 
                 {/* Left Column (Main Info) */}
-                <div className="lg:col-span-7 flex flex-col gap-6">
+                <div className="lg:col-span-7 flex flex-col gap-8">
                    
                    {/* Bio */}
-                   <div className="text-gray-700 leading-relaxed text-sm format-text">
-                      <p>
-                         {displayBio}
-                         {!isBioExpanded && isBioLong && <span>...</span>}
-                      </p>
-                      {isBioLong && (
-                         <button 
-                            className="text-red-600 font-semibold mt-1 hover:underline focus:outline-none"
-                            onClick={() => setIsBioExpanded(!isBioExpanded)}
-                         >
-                            {isBioExpanded ? 'Read less' : 'Read more'}
-                         </button>
-                      )}
-                      {mentor.linkedinUrl && (
-                         <a href={mentor.linkedinUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center justify-center mt-4 bg-blue-50 text-blue-600 h-8 w-8 rounded-md hover:bg-blue-100 transition-colors">
-                            <Linkedin size={16} />
-                         </a>
-                      )}
+                   <div className="bg-white rounded-2xl p-6 border border-gray-100 shadow-sm">
+                      <h3 className="text-lg font-bold text-gray-900 mb-4">About Me</h3>
+                      <div className="text-gray-700 leading-relaxed text-base">
+                         <p>
+                            {displayBio}
+                            {!isBioExpanded && isBioLong && <span>...</span>}
+                         </p>
+                         {isBioLong && (
+                            <button 
+                               className="text-primary font-bold mt-3 hover:underline flex items-center gap-1"
+                               onClick={() => setIsBioExpanded(!isBioExpanded)}
+                            >
+                               {isBioExpanded ? 'Read less' : 'Read more'}
+                            </button>
+                         )}
+                         {mentor.linkedinUrl && (
+                            <a href={mentor.linkedinUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 mt-6 bg-blue-50 text-blue-700 px-4 py-2 rounded-xl hover:bg-blue-100 transition-all font-bold text-sm">
+                               <Linkedin size={18} /> Connect on LinkedIn
+                            </a>
+                         )}
+                      </div>
                    </div>
 
                    {/* Tags Block */}
-                   <div className="border border-gray-200 rounded-2xl p-6 bg-white shadow-[0_4px_20px_-4px_rgba(0,0,0,0.06)] grid gap-6 grid-cols-1 sm:grid-cols-12 items-center">
-                      <div className="sm:col-span-3 text-sm font-semibold text-gray-700">Expertise:</div>
-                      <div className="sm:col-span-9 flex flex-wrap gap-2">
-                         {getArray(mentor.expertise).length > 0 ? getArray(mentor.expertise).map((exp, i) => (
-                            <span key={i} className="px-3 py-1 bg-gray-100 hover:bg-gray-200 transition-colors text-gray-700 text-xs font-semibold rounded-full border border-gray-200">
-                               {exp}
-                            </span>
-                         )) : <span className="text-sm text-gray-400">None added</span>}
+                   <div className="border border-gray-100 rounded-2xl p-8 bg-white shadow-sm space-y-8">
+                      <div>
+                        <h4 className="text-sm font-bold text-gray-400 uppercase tracking-widest mb-4">Core Expertise</h4>
+                        <div className="flex flex-wrap gap-2 text-sm">
+                           {getArray(mentor.expertise).length > 0 ? getArray(mentor.expertise).map((exp, i) => (
+                              <span key={i} className="px-4 py-2 bg-gray-50 text-gray-700 font-bold rounded-xl border border-gray-100 shadow-sm">
+                                 {exp}
+                              </span>
+                           )) : <span className="text-sm text-gray-400">None added</span>}
+                        </div>
                       </div>
 
-                      <div className="col-span-full h-px bg-gray-100"></div>
+                      <div className="h-px bg-gray-100"></div>
 
-                      <div className="sm:col-span-3 text-sm font-semibold text-gray-700">Disciplines:</div>
-                      <div className="sm:col-span-9 flex flex-wrap gap-2">
-                         {getArray(mentor.discipline).length > 0 ? getArray(mentor.discipline).map((disc, i) => (
-                            <span key={i} className="px-3 py-1 bg-gray-100 hover:bg-gray-200 transition-colors text-gray-700 text-xs font-semibold rounded-full border border-gray-200">
-                               {disc}
-                            </span>
-                         )) : <span className="text-sm text-gray-400">None added</span>}
+                      <div>
+                        <h4 className="text-sm font-bold text-gray-400 uppercase tracking-widest mb-4">Disciplines</h4>
+                        <div className="flex flex-wrap gap-2">
+                           {getArray(mentor.discipline).length > 0 ? getArray(mentor.discipline).map((disc, i) => (
+                              <span key={i} className="px-4 py-2 bg-primary/5 text-primary text-sm font-bold rounded-xl border border-primary/10">
+                                 {disc}
+                              </span>
+                           )) : <span className="text-sm text-gray-400">None added</span>}
+                        </div>
                       </div>
 
-                      <div className="col-span-full h-px bg-gray-100"></div>
+                      <div className="h-px bg-gray-100"></div>
 
-                      <div className="sm:col-span-3 text-sm font-semibold text-gray-700">Fluent In:</div>
-                      <div className="sm:col-span-9 flex flex-wrap gap-2">
-                         {getArray(mentor.fluentIn).length > 0 ? getArray(mentor.fluentIn).map((lang, i) => (
-                            <span key={i} className="px-3 py-1 bg-gray-100 hover:bg-gray-200 transition-colors text-gray-700 text-xs font-semibold rounded-full border border-gray-200">
-                               {lang}
-                            </span>
-                         )) : <span className="text-sm text-gray-400">None added</span>}
+                      <div>
+                        <h4 className="text-sm font-bold text-gray-400 uppercase tracking-widest mb-4">Industries</h4>
+                        <div className="flex flex-wrap gap-2">
+                           {getArray(mentor.industries).length > 0 ? getArray(mentor.industries).map((ind, i) => (
+                              <span key={i} className="px-4 py-2 bg-purple-50 text-purple-700 text-sm font-bold rounded-xl border border-purple-100 shadow-sm">
+                                 {ind}
+                              </span>
+                           )) : <span className="text-sm text-gray-400">None added</span>}
+                        </div>
+                      </div>
+
+                      <div className="h-px bg-gray-100"></div>
+
+                      <div>
+                        <h4 className="text-sm font-bold text-gray-400 uppercase tracking-widest mb-4">Fluent In</h4>
+                        <div className="flex flex-wrap gap-2">
+                           {getArray(mentor.fluentIn).length > 0 ? getArray(mentor.fluentIn).map((lang, i) => (
+                              <span key={i} className="px-4 py-2 bg-green-50 text-green-700 font-bold text-sm rounded-xl border border-green-100 shadow-sm">
+                                 {lang}
+                              </span>
+                           )) : <span className="text-sm text-gray-400">None added</span>}
+                        </div>
                       </div>
                    </div>
 
                    {/* Experience Box */}
-                   <div className="border border-gray-200 rounded-2xl p-6 bg-white shadow-[0_4px_20px_-4px_rgba(0,0,0,0.06)]">
-                      <div className="flex justify-between items-center mb-6">
-                         <div className="flex items-center gap-2">
-                            <h3 className="text-lg font-bold text-gray-900">Experience</h3>
-                            <span className="bg-primary text-white h-5 w-5 rounded-full flex items-center justify-center text-xs font-bold">
-                               {mentor.experience?.length || 0}
-                            </span>
-                         </div>
-                         <button className="text-xs font-bold text-primary hover:underline">View All</button>
-                      </div>
-                      
+                   <div className="border border-gray-100 rounded-2xl p-8 bg-white shadow-sm">
+                      <h3 className="text-xl font-bold text-gray-900 mb-8 tracking-tight">Experience</h3>
                       <div className="space-y-6">
-                         {getArray(mentor.experience).length > 0 ? getArray(mentor.experience).map((exp, i) => (
-                            <div key={i} className="flex gap-4">
-                               <div className="h-10 w-10 shrink-0 bg-gray-100 rounded-lg flex items-center justify-center">
-                                  <Briefcase size={20} className="text-gray-500" />
-                               </div>
-                               <div className="flex-1">
-                                  <div className="flex justify-between items-start">
-                                     <div>
-                                        <h4 className="font-bold text-gray-900 text-sm">{typeof exp === 'object' ? exp.title || exp.company : exp}</h4>
-                                        <p className="text-xs text-gray-500 mt-0.5">{typeof exp === 'object' ? exp.company : ''}</p>
+                         {getArray(mentor.experience).length > 0 ? (
+                            (showAllExperience ? getArray(mentor.experience) : getArray(mentor.experience).slice(0, 2)).map((exp, i) => (
+                               <div key={i} className="flex flex-col sm:flex-row gap-4 group">
+                                  <div className="h-12 w-12 shrink-0 bg-primary/5 rounded-xl flex items-center justify-center border border-primary/10">
+                                     <Briefcase size={22} className="text-primary" />
+                                  </div>
+                                  <div className="flex-1 pb-6 border-b border-gray-100 last:border-0 last:pb-0">
+                                     <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-2">
+                                        <div>
+                                           <h4 className="font-bold text-gray-900 text-lg leading-tight">{typeof exp === 'object' ? exp.title || exp.company : exp}</h4>
+                                           <p className="text-sm font-bold text-primary mt-1">{typeof exp === 'object' ? exp.company : ''}</p>
+                                        </div>
+                                        {typeof exp === 'object' && exp.startDate && (
+                                           <p className="text-xs text-gray-500 font-bold bg-gray-50 px-3 py-1.5 rounded-lg shrink-0 self-start">
+                                              {exp.startDate} - {exp.endDate || 'Present'}
+                                           </p>
+                                        )}
                                      </div>
-                                     <div className="text-[10px] font-medium text-gray-500 bg-gray-100 px-2 py-1 rounded">
-                                        {typeof exp === 'object' && exp.startDate ? `${exp.startDate} - ${exp.endDate || 'Present'}` : 'Year not specified'}
-                                     </div>
+                                     {typeof exp === 'object' && exp.description && <p className="text-sm text-gray-600 mt-3 leading-relaxed">{exp.description}</p>}
                                   </div>
                                </div>
-                            </div>
-                         )) : (
-                            <p className="text-sm text-gray-500">No experience listed.</p>
+                            ))
+                         ) : (
+                            <p className="text-sm text-gray-400 italic">No experience listed.</p>
+                         )}
+                         {getArray(mentor.experience).length > 2 && (
+                            <button 
+                               onClick={() => setShowAllExperience(!showAllExperience)}
+                               className="w-full py-3 text-sm font-bold text-gray-600 bg-gray-50 hover:bg-gray-100 rounded-xl transition-colors mt-4"
+                            >
+                               {showAllExperience ? 'Show Less' : `View All ${getArray(mentor.experience).length} Experiences`}
+                            </button>
                          )}
                       </div>
                    </div>
 
                    {/* Education Box */}
-                   <div className="border border-gray-200 rounded-2xl p-6 bg-white shadow-[0_4px_20px_-4px_rgba(0,0,0,0.06)]">
-                      <div className="flex justify-between items-center mb-6">
-                         <div className="flex items-center gap-2">
-                            <h3 className="text-lg font-bold text-gray-900">Education</h3>
-                            <span className="bg-primary text-white h-5 w-5 rounded-full flex items-center justify-center text-xs font-bold">
-                               {mentor.education?.length || 0}
-                            </span>
-                         </div>
-                         <button className="text-xs font-bold text-primary hover:underline">View All</button>
-                      </div>
-                      
+                   <div className="border border-gray-100 rounded-2xl p-8 bg-white shadow-sm">
+                      <h3 className="text-xl font-bold text-gray-900 mb-8 tracking-tight">Education</h3>
                       <div className="space-y-6">
-                         {getArray(mentor.education).length > 0 ? getArray(mentor.education).map((edu, i) => (
-                            <div key={i} className="flex gap-4">
-                               <div className="h-10 w-10 shrink-0 bg-gray-100 rounded-lg flex items-center justify-center">
-                                  <GraduationCap size={20} className="text-gray-500" />
-                               </div>
-                               <div className="flex-1">
-                                  <div className="flex justify-between items-start">
-                                     <div>
-                                        <h4 className="font-bold text-gray-900 text-sm">{typeof edu === 'object' ? edu.degree || edu.institution : edu}</h4>
-                                        <p className="text-xs text-gray-500 mt-0.5">{typeof edu === 'object' ? edu.institution : ''}</p>
-                                     </div>
-                                     <div className="text-[10px] font-medium text-gray-500 bg-gray-100 px-2 py-1 rounded">
-                                        {typeof edu === 'object' && edu.startDate ? `${edu.startDate} - ${edu.endDate || 'Present'}` : 'Year not specified'}
+                         {getArray(mentor.education).length > 0 ? (
+                            (showAllEducation ? getArray(mentor.education) : getArray(mentor.education).slice(0, 2)).map((edu, i) => (
+                               <div key={i} className="flex flex-col sm:flex-row gap-4 group">
+                                  <div className="h-12 w-12 shrink-0 bg-primary/5 rounded-xl flex items-center justify-center border border-primary/10">
+                                     <GraduationCap size={22} className="text-primary" />
+                                  </div>
+                                  <div className="flex-1 pb-6 border-b border-gray-100 last:border-0 last:pb-0">
+                                     <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-2">
+                                        <div>
+                                           <h4 className="font-bold text-gray-900 text-lg leading-tight">{typeof edu === 'object' ? edu.field || edu.institution : edu}</h4>
+                                           <p className="text-sm font-bold text-primary mt-1">{typeof edu === 'object' ? edu.institution : ''}</p>
+                                        </div>
+                                        {typeof edu === 'object' && edu.startDate && (
+                                           <p className="text-xs text-gray-500 font-bold bg-gray-50 px-3 py-1.5 rounded-lg shrink-0 self-start">
+                                              {edu.startDate} - {edu.endDate || 'Present'}
+                                           </p>
+                                        )}
                                      </div>
                                   </div>
                                </div>
-                            </div>
-                         )) : (
-                            <p className="text-sm text-gray-500">No education listed.</p>
+                            ))
+                         ) : (
+                            <p className="text-sm text-gray-400 italic">No education details listed.</p>
+                         )}
+                         {getArray(mentor.education).length > 2 && (
+                            <button 
+                               onClick={() => setShowAllEducation(!showAllEducation)}
+                               className="w-full py-3 text-sm font-bold text-gray-600 bg-gray-50 hover:bg-gray-100 rounded-xl transition-colors mt-4"
+                            >
+                               {showAllEducation ? 'Show Less' : `View All ${getArray(mentor.education).length} Education Details`}
+                            </button>
                          )}
                       </div>
                    </div>
-
                 </div>
 
                 {/* Right Column (Widgets) */}
-                <div className="lg:col-span-5 flex flex-col gap-6">
+                <div className="lg:col-span-5 flex flex-col gap-8">
                    
                    {/* Community Statistics Widget */}
-                   <div className="border border-gray-200 rounded-2xl p-6 bg-white shadow-[0_4px_20px_-4px_rgba(0,0,0,0.06)] relative">
-                      <div className="flex justify-between items-center mb-6">
-                         <h3 className="text-base font-bold text-gray-900">Community Statistics</h3>
-                      </div>
+                   <div className="bg-gradient-to-br from-[#b22222] to-[#1a3a5a] rounded-3xl p-8 text-white shadow-2xl relative overflow-hidden group">
+                      <div className="absolute top-0 right-0 h-40 w-40 bg-white/5 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2 group-hover:scale-150 transition-transform duration-700" />
                       
-                      <div className="grid grid-cols-2 gap-4">
-                         
-                         <div className="flex items-start gap-3">
-                            <div className="h-8 w-8 rounded-full bg-red-100 text-primary flex items-center justify-center shrink-0">
-                               <span className="text-sm">🚀</span>
-                            </div>
-                            <div>
-                               <p className="text-sm font-bold text-gray-900">{(mentor.sessions || 0) * 60} mins</p>
-                               <p className="text-[10px] text-gray-500">Session Time</p>
-                            </div>
+                      <h3 className="text-lg font-bold mb-8 flex items-center gap-2">
+                         <div className="h-2 w-2 bg-primary rounded-full" /> Mentor Impact
+                      </h3>
+                      
+                      <div className="grid grid-cols-2 gap-y-10">
+                         <div>
+                            <p className="text-3xl font-black mb-1">{mentor.minutesTrained || 0}+</p>
+                            <p className="text-xs font-bold text-blue-200 uppercase tracking-widest opacity-80">Minutes Trained</p>
                          </div>
-                         
-                         <div className="flex items-start gap-3">
-                            <div className="h-8 w-8 rounded-full bg-blue-50 text-blue-500 flex items-center justify-center shrink-0">
-                               <Star size={14} className="fill-blue-500" />
-                            </div>
-                            <div>
-                               <p className="text-sm font-bold text-gray-900">{mentor.sessions || 0}</p>
-                               <p className="text-[10px] text-gray-500">Sessions Completed</p>
-                            </div>
+                         <div>
+                            <p className="text-3xl font-black mb-1 text-primary">{mentor.impact?.sessionsCompleted || mentor.sessionsCompleted || 0}</p>
+                            <p className="text-xs font-bold text-blue-200 uppercase tracking-widest opacity-80">Sessions Completed</p>
                          </div>
-
-                         <div className="flex items-start gap-3 mt-4">
-                            <div className="h-8 w-8 rounded-full bg-orange-50 text-orange-500 flex items-center justify-center shrink-0">
-                               <Calendar size={14} />
-                            </div>
-                            <div>
-                               <div className="flex items-center gap-1">
-                                  <p className="text-sm font-bold text-gray-900">{mentor.attendance || '0%'}</p>
-                               </div>
-                               <p className="text-[10px] text-gray-500">Average Attendance</p>
-                            </div>
+                         <div>
+                            <p className="text-3xl font-black mb-1 text-green-400">{mentor.attendanceRate || '0%'}</p>
+                            <p className="text-xs font-bold text-blue-200 uppercase tracking-widest opacity-80">Attendance Rate</p>
                          </div>
-
-                         <div className="flex items-start gap-3 mt-4">
-                            <div className="h-8 w-8 rounded-full bg-green-50 text-green-500 flex items-center justify-center shrink-0">
-                               <Heart size={14} className="fill-green-500" />
-                            </div>
-                            <div>
-                               <div className="flex items-center gap-1">
-                                  <p className="text-sm font-bold text-gray-900">{(mentor.rating || 0) * 10 + (mentor.reviews || 0)}</p>
-                               </div>
-                               <p className="text-[10px] text-gray-500">Impact Score</p>
-                            </div>
+                         <div>
+                            <p className="text-3xl font-black mb-1 text-yellow-400">{mentor.rating || '0.0'}</p>
+                            <p className="text-xs font-bold text-blue-200 uppercase tracking-widest opacity-80">Expert Rating</p>
                          </div>
                       </div>
 
-                      <div className="h-px bg-gray-100 my-6"></div>
-
-                      <h4 className="text-sm font-bold text-gray-900 mb-1">Top Areas of Impact</h4>
-                      <p className="text-[10px] text-gray-500 mb-4">Highly discussed topics during sessions</p>
-                      
-                      <div className="flex flex-col gap-2">
-                         {getArray(mentor.expertise).length > 0 ? getArray(mentor.expertise).slice(0, 3).map((exp, i) => (
-                            <div key={i} className="bg-purple-50 text-purple-700 text-xs font-semibold py-2 px-3 rounded-md truncate">
-                               {exp}
-                            </div>
-                         )) : <div className="text-xs text-gray-400">No data yet</div>}
-                         {getArray(mentor.expertise).length > 3 && (
-                            <div className="text-xs font-bold text-purple-700 mt-1 hover:underline cursor-pointer">
-                               +{mentor.expertise.length - 3} Others
-                            </div>
-                         )}
+                      <div className="mt-10 pt-8 border-t border-white/10">
+                         <h4 className="text-sm font-bold text-primary mb-4 uppercase tracking-widest">Top Impact Areas</h4>
+                         <div className="flex flex-wrap gap-2">
+                            {getArray(mentor.expertise).length > 0 ? getArray(mentor.expertise).slice(0, 4).map((exp, i) => (
+                               <div key={i} className="bg-white/10 hover:bg-white/20 transition-colors text-white text-xs font-bold py-2 px-3 rounded-xl border border-white/10">
+                                  {exp}
+                               </div>
+                            )) : <div className="text-xs text-blue-300">New Expert</div>}
+                         </div>
                       </div>
                    </div>
 
-                   {/* Available Sessions Widget */}
-                   <div className="border border-gray-200 rounded-2xl p-8 bg-white shadow-[0_4px_20px_-4px_rgba(0,0,0,0.06)]">
-                      <div className="mb-6">
-                         <h3 className="text-xl font-bold text-[#0A2640]">Available sessions</h3>
-                         <p className="text-sm font-medium text-gray-500 mt-1">Book 1:1 sessions from the options based on your needs</p>
-                      </div>
-
-                      <div className="flex items-center justify-between gap-4 mb-6">
-                         <div className="flex gap-4 overflow-x-auto pb-2 scrollbar-hide py-1 flex-1">
-                            {displayDates.slice(0, 4).map((dateObj, i) => {
-                               const { dateString, hasSlots, isPast } = getDateStatus(dateObj);
-                               const slotsCount = hasSlots ? getAvailableSlotsForDate(dateString).length : 0;
-                               
-                               let boxClasses = "shrink-0 w-[72px] h-[76px] rounded-xl flex flex-col items-center justify-center transition-all cursor-pointer border ";
-                               
-                               if (isPast) {
-                                  boxClasses += "bg-gray-50 text-gray-400 border-gray-100 cursor-not-allowed";
-                               } else if (hasSlots) {
-                                  boxClasses += selectedDateStr === dateString 
-                                     ? "bg-white text-gray-900 border-gray-900 shadow-md ring-1 ring-gray-900" 
-                                     : "bg-white text-gray-700 border-gray-200 shadow-sm hover:border-gray-400";
-                               } else {
-                                  boxClasses += selectedDateStr === dateString 
-                                     ? "bg-gray-50 text-gray-900 border-gray-900 ring-1 ring-gray-900"
-                                     : "bg-white text-gray-400 border-gray-200 hover:bg-gray-50";
-                               }
-
-                               return (
-                                  <button 
-                                     key={i} 
-                                     disabled={isPast}
-                                     className={boxClasses}
-                                     onClick={() => setSelectedDateStr(dateString)}
-                                  >
-                                     <span className="text-[9px] font-bold text-gray-500 uppercase tracking-widest">{dateObj.toLocaleDateString('en-US', { weekday: 'short' })}</span>
-                                     <span className="text-sm font-bold text-[#0A2640] mt-0.5">{dateObj.getDate()} {dateObj.toLocaleDateString('en-US', { month: 'short' })}</span>
-                                     {hasSlots && !isPast && <span className="text-[10px] font-bold text-green-500 mt-1">{slotsCount} slots</span>}
-                                  </button>
-                               );
-                            })}
+                   {/* Availability Preview Widget */}
+                   <div className="border border-gray-100 rounded-3xl p-6 lg:p-8 bg-white shadow-xl relative mt-8 lg:mt-0">
+                      <div className="mb-8">
+                         <div className="flex justify-between items-center mb-2">
+                           <h3 className="text-xl font-extrabold text-gray-900 tracking-tight">Availability</h3>
+                           <button onClick={() => setBookingStep(1)} className="text-sm font-bold text-primary hover:underline">Full Calendar</button>
                          </div>
-                         
-                         <button 
-                            className="text-sm font-bold text-[#b22222] hover:text-[#8b1a1a] transition-colors flex items-center shrink-0 whitespace-nowrap pl-2"
-                            onClick={() => setBookingStep(1)}
-                         >
-                            View all <ChevronRight size={16} className="ml-0.5" />
-                         </button>
+                         <p className="text-sm font-medium text-gray-500">Pick a time that works for you.</p>
                       </div>
 
-                      <div className="flex items-center justify-between mb-4">
-                         <h4 className="text-base font-bold text-[#0A2640]">Available sessions</h4>
-                         <div className="flex gap-2 text-gray-300">
-                            <ChevronLeft size={18} className="cursor-pointer hover:text-gray-900 transition-colors" />
-                            <ChevronRight size={18} className="cursor-pointer hover:text-gray-900 transition-colors" />
-                         </div>
+                      <div className="flex items-center gap-3 overflow-x-auto pb-4 scrollbar-hide py-1">
+                        {displayDates.slice(0, 5).map((dateObj, i) => {
+                           const { dateString, hasSlots, isPast } = getDateStatus(dateObj);
+                           const isSelected = selectedDateStr === dateString;
+                           
+                           return (
+                              <button 
+                                 key={i} 
+                                 disabled={isPast}
+                                 className={`shrink-0 w-16 h-20 rounded-2xl flex flex-col items-center justify-center transition-all border ${
+                                    isPast ? 'bg-gray-50 text-gray-400 border-gray-50 opacity-40' :
+                                    isSelected ? 'bg-primary text-white border-primary shadow-lg scale-105' : 
+                                    hasSlots ? 'bg-white text-gray-900 border-gray-200 hover:border-primary/50 hover:bg-primary/5' : 'bg-white text-gray-300 border-gray-100'
+                                 }`}
+                                 onClick={() => setSelectedDateStr(dateString)}
+                              >
+                                 <span className={`text-[10px] font-bold uppercase ${isSelected ? 'text-white/70' : 'text-gray-400'}`}>{dateObj.toLocaleDateString('en-US', { weekday: 'short' })}</span>
+                                 <span className="text-lg font-black mt-1">{dateObj.getDate()}</span>
+                                 {hasSlots && !isPast && !isSelected && <div className="h-1 w-1 bg-primary rounded-full mt-1" />}
+                              </button>
+                           );
+                        })}
                       </div>
 
-                      <div className="space-y-3 mb-8">
+                      <div className="mt-8 space-y-3">
                          {selectedDateStr && getAvailableSlotsForDate(selectedDateStr).length > 0 ? (
-                            getAvailableSlotsForDate(selectedDateStr).map(slot => (
+                            getAvailableSlotsForDate(selectedDateStr).slice(0, 3).map(slot => (
                                <button 
                                   key={slot.id}
-                                  onClick={() => {
-                                     setSelectedSlot({ ...slot, date: selectedDateStr });
-                                  }}
-                                  className={`w-full p-4 border rounded-xl transition-all flex flex-col sm:flex-row sm:items-center justify-between text-left group ${
+                                  onClick={() => setSelectedSlot({ ...slot, date: selectedDateStr })}
+                                  className={`w-full p-5 border rounded-2xl transition-all duration-300 flex items-center justify-between group shadow-sm hover:shadow-md ${
                                      selectedSlot?.id === slot.id && selectedSlot?.date === selectedDateStr
-                                        ? 'bg-primary/5 border-primary shadow-md ring-1 ring-primary'
-                                        : 'bg-white border-gray-200 hover:border-primary/50 shadow-sm hover:shadow-md'
+                                        ? 'bg-[#b22222]/5 border-[#b22222]'
+                                        : 'bg-white border-gray-200 hover:border-[#b22222]/30'
                                   }`}
                                >
-                                  <div>
-                                     <h5 className="font-bold text-[#0A2640] text-base">{slot.title || 'Mentorship Session'}</h5>
-                                     <div className="flex items-center gap-3 mt-1.5 text-xs font-bold">
-                                        <span className="flex items-center text-primary bg-primary/10 px-2 py-1 rounded-md">
-                                           <Clock size={14} className="mr-1.5" /> {slot.startTime} - {slot.endTime}
-                                        </span>
-                                        <span className="flex items-center text-green-700 bg-green-100 px-2 py-1 rounded-md">
-                                           <DollarSign size={14} className="mr-0.5" />
-                                           {parseFloat(slot.price) > 0 ? parseFloat(slot.price).toFixed(2) : 'Free'}
-                                        </span>
+                                  <div className="flex items-center gap-4">
+                                     <div className={`h-12 w-12 rounded-xl flex items-center justify-center transition-colors ${selectedSlot?.id === slot.id ? 'bg-[#b22222] text-white shadow-md' : 'bg-gray-50 text-gray-500 group-hover:bg-[#b22222]/10 group-hover:text-[#b22222]'}`}>
+                                        <Clock size={20} />
+                                     </div>
+                                     <div className="flex flex-col items-start gap-1">
+                                        <span className={`text-base font-black tracking-tight ${selectedSlot?.id === slot.id ? 'text-[#b22222]' : 'text-gray-900 group-hover:text-[#b22222]'}`}>{slot.startTime}</span>
+                                        {slot.price > 0 ? (
+                                           <span className="text-xs font-bold text-gray-500 uppercase px-2 py-0.5 bg-gray-100 rounded-lg group-hover:bg-[#b22222]/10 group-hover:text-[#b22222] transition-colors">₦{slot.price.toLocaleString()}</span>
+                                        ) : (
+                                           <span className="text-xs font-bold text-green-600 uppercase px-2 py-0.5 bg-green-50 rounded-lg">Free</span>
+                                        )}
                                      </div>
                                   </div>
-                                  
-                                  <div className={`mt-3 sm:mt-0 px-4 py-2 rounded-lg text-sm font-bold transition-colors ${
-                                     selectedSlot?.id === slot.id && selectedSlot?.date === selectedDateStr
-                                        ? 'bg-primary text-white'
-                                        : 'bg-gray-100 text-gray-500 group-hover:bg-primary/10 group-hover:text-primary'
-                                  }`}>
-                                     {selectedSlot?.id === slot.id && selectedSlot?.date === selectedDateStr ? 'Selected' : 'Select'}
+                                  <div className={`h-8 w-8 rounded-full border-2 flex items-center justify-center transition-all ${selectedSlot?.id === slot.id ? 'border-[#b22222] bg-[#b22222] text-white' : 'border-gray-200 text-transparent group-hover:border-[#b22222]/30'}`}>
+                                     <CheckCircle size={16} />
                                   </div>
                                </button>
                             ))
                          ) : (
-                            <div className="py-8 text-center border-2 border-dashed border-gray-100 rounded-xl">
-                               <p className="text-sm font-medium text-gray-500">No sessions available on this date</p>
+                            <div className="py-10 text-center border-2 border-dashed border-gray-100 rounded-2xl">
+                               <p className="text-sm font-bold text-gray-400">No time available on this date</p>
                             </div>
+                         )}
+                         {selectedDateStr && getAvailableSlotsForDate(selectedDateStr).length > 3 && (
+                            <button onClick={() => setBookingStep(2)} className="w-full text-center text-xs font-bold text-gray-400 hover:text-primary transition-colors py-2">
+                               +{getAvailableSlotsForDate(selectedDateStr).length - 3} more slots
+                            </button>
                          )}
                       </div>
 
                       <button 
                          disabled={!selectedSlot || selectedSlot.date !== selectedDateStr}
-                         className={`w-full py-4 rounded-xl text-base font-bold transition-all text-white shadow-md flex items-center justify-center ${
+                         className={`w-full mt-10 py-5 rounded-2xl text-lg font-black transition-all text-white shadow-xl flex items-center justify-center ${
                             !selectedSlot || selectedSlot.date !== selectedDateStr
-                               ? 'bg-red-300 cursor-not-allowed'
-                               : 'bg-[#b22222] hover:bg-red-800'
+                               ? 'bg-gray-300 transform-none'
+                               : 'bg-primary hover:bg-primary-dark transform hover:-translate-y-1 active:scale-95 shadow-primary/30'
                          }`}
                          onClick={() => setBookingStep(3)}
                       >
-                         Continue to Book Session <ChevronRight size={18} className="ml-2" />
+                         Confirm Booking <ChevronRight size={20} className="ml-2" />
                       </button>
+
+                      {/* Message Request Option if not interested in current times */}
+                      <div className="mt-8 pt-6 border-t border-gray-100 text-center">
+                         <p className="text-sm font-medium text-gray-500 mb-3">Not seeing a suitable time?</p>
+                         <button 
+                           onClick={() => setIsMessageModalOpen(true)}
+                           className="text-primary font-bold hover:underline flex items-center justify-center mx-auto gap-2"
+                         >
+                            <MessageSquare size={16} /> Send a Message Request
+                         </button>
+                      </div>
                    </div>
                 </div>
 
@@ -583,98 +628,157 @@ const MentorProfile = () => {
           )}
 
           {activeTab === 'Reviews' && (
-             <div className="bg-white border text-gray-500 border-gray-200 rounded-2xl shadow-sm p-8 sm:p-12 space-y-12">
-                <div className="flex flex-col sm:flex-row gap-8">
-                   <div className="flex-1 space-y-6 max-w-lg">
+             <div className="bg-white border text-gray-500 border-gray-100 rounded-3xl shadow-sm p-8 sm:p-12 space-y-12">
+                <div className="flex flex-col lg:flex-row gap-12">
+                   <div className="flex-1 space-y-8">
                       <div>
-                         <div className="flex justify-between text-xs font-bold text-gray-700 mb-1">
-                            <span>Communication</span>
-                            <span>99%</span>
+                         <div className="flex justify-between text-sm font-bold text-gray-900 mb-2">
+                            <span>Communication Skills</span>
+                            <span className="text-primary">99%</span>
                          </div>
-                         <div className="h-1.5 w-full bg-gray-200 rounded-full overflow-hidden">
-                            <div className="h-full bg-primary rounded-full" style={{ width: '99%' }}></div>
+                         <div className="h-2 w-full bg-gray-100 rounded-full overflow-hidden shadow-inner">
+                            <div className="h-full bg-gradient-to-r from-primary/80 to-primary rounded-full transition-all duration-1000" style={{ width: '99%' }}></div>
                          </div>
                       </div>
                       <div>
-                         <div className="flex justify-between text-xs font-bold text-gray-700 mb-1">
-                            <span>Problem Solving</span>
-                            <span>99%</span>
+                         <div className="flex justify-between text-sm font-bold text-gray-900 mb-2">
+                            <span>Problem Solving Depth</span>
+                            <span className="text-primary">99%</span>
                          </div>
-                         <div className="h-1.5 w-full bg-gray-200 rounded-full overflow-hidden">
-                            <div className="h-full bg-primary rounded-full" style={{ width: '99%' }}></div>
+                         <div className="h-2 w-full bg-gray-100 rounded-full overflow-hidden shadow-inner">
+                            <div className="h-full bg-gradient-to-r from-primary/80 to-primary rounded-full transition-all duration-1000" style={{ width: '99%' }}></div>
                          </div>
                       </div>
                    </div>
                    
-                   <div className="flex-1 space-y-6 max-w-lg">
+                   <div className="flex-1 space-y-8">
                       <div>
-                         <div className="flex justify-between text-xs font-bold text-gray-700 mb-1">
-                            <span>Motivational</span>
-                            <span>97%</span>
+                         <div className="flex justify-between text-sm font-bold text-gray-900 mb-2">
+                            <span>Motivational Impact</span>
+                            <span className="text-primary">97%</span>
                          </div>
-                         <div className="h-1.5 w-full bg-gray-200 rounded-full overflow-hidden">
-                            <div className="h-full bg-primary rounded-full" style={{ width: '97%' }}></div>
+                         <div className="h-2 w-full bg-gray-100 rounded-full overflow-hidden shadow-inner">
+                            <div className="h-full bg-gradient-to-r from-primary/80 to-primary rounded-full transition-all duration-1000" style={{ width: '97%' }}></div>
                          </div>
                       </div>
                       <div>
-                         <div className="flex justify-between text-xs font-bold text-gray-700 mb-1">
-                            <span>Subject Knowledge</span>
-                            <span>100%</span>
+                         <div className="flex justify-between text-sm font-bold text-gray-900 mb-2">
+                            <span>Industry Insight</span>
+                            <span className="text-primary">100%</span>
                          </div>
-                         <div className="h-1.5 w-full bg-gray-200 rounded-full overflow-hidden">
-                            <div className="h-full bg-primary rounded-full" style={{ width: '100%' }}></div>
+                         <div className="h-2 w-full bg-gray-100 rounded-full overflow-hidden shadow-inner">
+                            <div className="h-full bg-gradient-to-r from-primary/80 to-primary rounded-full transition-all duration-1000" style={{ width: '100%' }}></div>
                          </div>
                       </div>
                    </div>
                 </div>
 
-                <div className="pt-8 border-t border-gray-100">
-                   <h4 className="font-bold text-gray-900 mb-6 text-lg">Real experiences with mentor</h4>
-                   <div className="bg-white rounded-xl p-8 shadow-[0_2px_15px_-3px_rgba(0,0,0,0.07),0_10px_20px_-2px_rgba(0,0,0,0.04)] border border-gray-100 relative mb-6">
-                      <p className="text-xs text-gray-400 font-medium mb-4">March 10, 2025</p>
-                      <p className="text-sm text-gray-700 leading-relaxed mb-8">
-                         {mentor.name?.split(' ')[0]} was extremely helpful and provided clear, actionable steps to improve my skills. His advice on personal branding and networking was especially valuable. I left the session feeling more confident and prepared for my next career move!
-                      </p>
-                      <div className="flex items-center justify-between">
-                         <div className="flex items-center gap-4">
-                            <div className="h-12 w-12 rounded-full border border-gray-200 overflow-hidden shrink-0">
-                               <img src="https://i.pravatar.cc/150?img=11" alt="Mentee" className="h-full w-full object-cover" />
-                            </div>
-                            <div>
-                               <p className="text-sm font-bold text-gray-900">Emmanuel Ayobami <span className="text-[10px] text-gray-500 font-bold uppercase bg-gray-100 px-1 rounded ml-1">NG</span></p>
-                               <p className="text-xs text-gray-500 mt-0.5">Front-End Developer | UI/UX Designer</p>
-                            </div>
-                         </div>
-                         <div className="bg-[#b22222] text-white text-xs font-bold px-4 py-1.5 rounded-full shadow-sm shrink-0">
-                            Mentee
-                         </div>
+                <div className="pt-12 border-t border-gray-100">
+                   <h4 className="text-2xl font-black text-gray-900 mb-10 tracking-tight">Mentee Success Stories</h4>
+                   
+                   {mentor.reviews && mentor.reviews.length > 0 ? (
+                      <div className="space-y-6">
+                         {mentor.reviews.map((rev) => {
+                            const menteeDetails = rev.mentee?.user || {};
+                            // Map rating to stars
+                            const renderStars = () => {
+                               const stars = [];
+                               for(let i=0; i<5; i++){
+                                  stars.push(<Star key={i} className={`h-5 w-5 ${i < rev.rating ? 'text-yellow-400 fill-yellow-400' : 'text-gray-300'}`} />);
+                               }
+                               return stars;
+                            };
+                            return (
+                               <div key={rev.id} className="bg-gray-50/50 rounded-3xl p-8 border border-gray-100 relative group hover:bg-white hover:shadow-xl transition-all duration-300">
+                                  
+                                  <div className="flex mb-4 gap-1">
+                                    {renderStars()}
+                                  </div>
+                                  
+                                  <p className="text-lg text-gray-800 leading-relaxed font-medium mb-10 italic">
+                                     "{rev.comment}"
+                                  </p>
+                                  
+                                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6">
+                                     <div className="flex items-center gap-4">
+                                        <div 
+                                           onClick={() => navigate(`/mentor/mentee/${rev.mentee?.id}`)} 
+                                           className="h-14 w-14 cursor-pointer rounded-full border-2 border-white overflow-hidden shrink-0 shadow-lg block hover:opacity-80 transition-opacity"
+                                        >
+                                           <img src={menteeDetails.picture || "http://localhost:5000/uploads/default.png"} alt="Mentee" className="h-full w-full object-cover" />
+                                        </div>
+                                        <div>
+                                           <div 
+                                              onClick={() => navigate(`/mentor/mentee/${rev.mentee?.id}`)} 
+                                              className="text-base cursor-pointer font-black text-gray-900 hover:text-primary transition-colors block"
+                                           >
+                                              {menteeDetails.name || 'Anonymous Mentee'}
+                                           </div>
+                                           <p className="text-sm font-semibold text-primary">{new Date(rev.createdAt).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' })}</p>
+                                        </div>
+                                     </div>
+                                     <div className="bg-white px-6 py-2.5 rounded-2xl shadow-sm border border-gray-100 flex items-center gap-2">
+                                        <div className="h-3 w-3 bg-green-500 rounded-full" />
+                                        <span className="text-sm font-bold text-gray-900">Verified Session</span>
+                                     </div>
+                                  </div>
+                               </div>
+                            );
+                         })}
                       </div>
-                      {/* Decorative chat bubble icon like in the screenshot */}
-                      <div className="absolute -bottom-5 -right-5 h-14 w-14 bg-[#8b5cf6] rounded-full shadow-lg flex items-center justify-center text-white border-4 border-white">
-                         <MessageSquare size={20} className="fill-current" />
+                   ) : (
+                      <div className="text-center py-20 bg-gray-50 rounded-xl border border-dashed border-gray-200">
+                         <Star className="mx-auto text-yellow-300 mb-4" size={48} />
+                         <p className="text-gray-500 font-bold">No reviews found yet.</p>
                       </div>
-                   </div>
+                   )}
                 </div>
              </div>
           )}
 
           {activeTab === 'Achievements' && (
-             <div className="text-center py-20 bg-white border border-gray-200 rounded-xl shadow-sm">
-                <div className="inline-flex h-20 w-20 bg-blue-50 text-blue-500 rounded-full items-center justify-center mb-4">
-                   🏆
+             <div className="bg-white border border-gray-100 rounded-3xl p-8 sm:p-12 shadow-sm">
+                <div className="flex items-center gap-3 mb-8">
+                   <div className="h-12 w-12 bg-yellow-50 text-yellow-500 rounded-full flex items-center justify-center">
+                      <Star size={24} className="fill-yellow-500" />
+                   </div>
+                   <h3 className="text-2xl font-black text-gray-900 tracking-tight">Credentials & Recognition</h3>
                 </div>
-                <h3 className="text-xl font-bold text-gray-900">Achievements</h3>
-                <p className="text-gray-500 max-w-md mx-auto mt-2">Badges, certificates, and recognition earned by {mentor.name} will appear here.</p>
+
+                {mentor.achievements && mentor.achievements.length > 0 ? (
+                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                      {mentor.achievements.map((ach) => (
+                         <div key={ach.id} className="bg-gray-50 border border-gray-200 rounded-2xl p-6 flex gap-4 hover:border-yellow-400 hover:shadow-lg transition-all group flex-col sm:flex-row items-center sm:items-start text-center sm:text-left">
+                            <div className="text-5xl shrink-0 group-hover:scale-110 transition-transform mb-2 sm:mb-0">
+                               {ach.icon || '🏆'}
+                            </div>
+                            <div className="flex flex-col justify-center">
+                               <h4 className="font-bold text-gray-900 text-lg leading-tight">{ach.title}</h4>
+                               <p className="text-sm text-gray-500 mt-1">{ach.description}</p>
+                               <span className="text-xs font-bold text-gray-400 uppercase tracking-widest mt-3">Earned {new Date(ach.earned_at).toLocaleDateString()}</span>
+                            </div>
+                         </div>
+                      ))}
+                   </div>
+                ) : (
+                   <div className="text-center py-16 bg-gray-50 rounded-2xl border border-dashed border-gray-200">
+                      <div className="h-16 w-16 bg-blue-50 text-blue-500 rounded-full flex items-center justify-center mx-auto mb-4">
+                         <Star size={24} className="fill-blue-500 opacity-50" />
+                      </div>
+                      <h4 className="text-lg font-bold text-gray-900 mb-2">No achievements yet</h4>
+                      <p className="text-gray-500 text-sm max-w-sm mx-auto">This mentor has not unlocked any credentials. Sessions completed on the platform contribute to milestones.</p>
+                   </div>
+                )}
              </div>
           )}
 
           {activeTab === 'GroupSessions' && (
-             <div className="text-center py-20 bg-white border border-gray-200 rounded-xl shadow-sm">
-                <div className="inline-flex h-20 w-20 bg-green-50 text-green-500 rounded-full items-center justify-center mb-4">
-                   👥
+             <div className="bg-white border border-gray-100 rounded-3xl p-16 text-center shadow-sm">
+                <div className="h-24 w-24 bg-green-50 text-green-500 rounded-full flex items-center justify-center mx-auto mb-8 shadow-inner">
+                   <Users size={40} />
                 </div>
-                <h3 className="text-xl font-bold text-gray-900">Group Sessions</h3>
-                <p className="text-gray-500 max-w-md mx-auto mt-2">Upcoming live workshops and cohort-based mentorship hosted by {mentor.name}.</p>
+                <h3 className="text-2xl font-black text-gray-900 mb-4">Interactive Workshops</h3>
+                <p className="text-gray-500 max-w-lg mx-auto text-lg leading-relaxed font-medium">Upcoming group mentorship circles, masterclasses, and cohort-based learning events hosted by {mentor.name}.</p>
              </div>
           )}
        </div>
@@ -682,255 +786,253 @@ const MentorProfile = () => {
        {/* Redesigned 3-Step Booking Modal */}
        <AnimatePresence>
           {bookingStep > 0 && (
-             <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 pb-[100px] mt-8">
+             <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 overflow-hidden">
                 <motion.div 
                    initial={{ opacity: 0 }} 
                    animate={{ opacity: 1 }} 
                    exit={{ opacity: 0 }}
-                   className="absolute inset-0 bg-black/40 backdrop-blur-sm"
+                   className="absolute inset-0 bg-black/60 backdrop-blur-md"
                    onClick={() => setBookingStep(0)}
                 />
                 
                 <motion.div 
-                   initial={{ scale: 0.95, opacity: 0, y: 20 }}
+                   initial={{ scale: 0.9, opacity: 0, y: 50 }}
                    animate={{ scale: 1, opacity: 1, y: 0 }}
-                   exit={{ scale: 0.95, opacity: 0, y: 20 }}
-                   className="bg-white rounded-[24px] shadow-2xl relative z-10 w-full max-w-4xl overflow-hidden max-h-[85vh] flex flex-col md:flex-row min-h-[500px]"
+                   exit={{ scale: 0.9, opacity: 0, y: 50 }}
+                   className="bg-white rounded-[24px] shadow-2xl relative z-10 w-full max-w-4xl overflow-hidden max-h-[90vh] flex flex-col md:flex-row-reverse"
                 >
-                   {/* Close Button top right container */}
+                   {/* Close Button */}
                    <button 
                       onClick={() => setBookingStep(0)} 
-                      className="absolute top-4 right-4 z-20 h-8 w-8 bg-gray-100 hover:bg-gray-200 rounded-full flex items-center justify-center text-gray-500 transition-colors"
+                      className="absolute top-6 right-6 z-20 h-10 w-10 bg-gray-50 hover:bg-gray-200 rounded-full flex items-center justify-center text-gray-500 transition-all border border-gray-100 shadow-sm"
                    >
-                      <X size={16} strokeWidth={3} />
+                      <X size={20} strokeWidth={3} />
                    </button>
 
-                   {/* Left Sidebar (Mentor Info) */}
-                   <div className="p-8 md:w-5/12 border-b md:border-b-0 md:border-r border-gray-100 bg-white">
-                      <h2 className="text-2xl font-bold text-[#0A2640] mb-2">Mentorship Session</h2>
-                      <p className="text-sm font-bold text-[#0A2640]">
-                         {mentor.name} <span className="text-gray-400 font-medium ml-1">• {mentor.role || 'Mentor'} at {mentor.company || 'Wisdom Connect'}</span>
-                      </p>
+                   {/* Modal Container: Flex Row (Main content left, Profile/Info Right) */}
+                   <div className="hidden md:block p-8 md:w-5/12 bg-gray-50/30 overflow-y-auto relative">
+                      <div className="h-20 w-20 rounded-2xl bg-white shadow-md mb-6 overflow-hidden flex items-center justify-center font-bold text-2xl text-primary uppercase border border-white">
+                         {mentor.picture && mentor.picture !== "http://localhost:5000/uploads/default.png" ? (
+                             <img src={mentor.picture} alt={mentor.name} className="h-full w-full object-cover" />
+                         ) : mentor.name?.charAt(0)}
+                      </div>
+                      <h2 className="text-2xl font-bold text-gray-900 mb-2 leading-tight">Book Mentorship</h2>
+                      <p className="text-sm font-bold text-primary mb-10">{mentor.name} • {mentor.role || 'Expert Mentor'}</p>
                       
-                      <div className="mt-8 pt-8 border-t border-gray-100 space-y-6 text-[#0A2640]">
-                         <div>
-                            <p className="text-xs font-medium text-gray-500 mb-1">Price</p>
-                            <p className="text-xl font-bold">Free</p>
+                      <div className="space-y-8">
+                         <div className="flex items-center gap-4">
+                            <div className="h-10 w-10 rounded-xl bg-white shadow-sm flex items-center justify-center text-gray-500">
+                               <span className="text-[#b22222] font-extrabold text-xl">₦</span>
+                            </div>
+                            <div>
+                               <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Rate</p>
+                               <p className="text-lg font-black text-gray-900">
+                                  {selectedSlot?.price > 0 ? `₦${selectedSlot.price.toLocaleString()}` : 'Free Session'}
+                               </p>
+                            </div>
                          </div>
-                         <div>
-                            <p className="text-xs font-medium text-gray-500 mb-1">Session duration</p>
-                            <p className="text-sm font-bold">60 minutes</p>
-                         </div>
-                         <div>
-                            <p className="text-xs font-medium text-gray-500 mb-1">About</p>
-                            <p className="text-sm font-bold">Mentorship session</p>
+                         <div className="flex items-center gap-4">
+                            <div className="h-10 w-10 rounded-xl bg-white shadow-sm flex items-center justify-center text-gray-500">
+                               <Clock size={20} />
+                            </div>
+                            <div>
+                               <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Duration</p>
+                               <p className="text-lg font-black text-gray-900">{selectedSlot?.custom_duration || mentor?.default_duration || 30} Minutes</p>
+                            </div>
                          </div>
                       </div>
+                      
+                      {selectedSlot && (
+                        <div className="mt-12 pt-8 border-t border-gray-200 flex flex-wrap gap-3">
+                           <div className="bg-primary text-white text-xs font-bold px-4 py-2 rounded-xl shadow-md flex items-center gap-2">
+                              <Calendar size={14} /> {new Date(selectedSlot.date).toLocaleDateString('en-US', { day: 'numeric', month: 'short' })}
+                           </div>
+                           <div className="bg-white text-primary text-xs font-bold px-4 py-2 rounded-xl border border-primary/20 shadow-sm flex items-center gap-2">
+                              <Clock size={14} /> {selectedSlot.startTime}
+                           </div>
+                        </div>
+                      )}
                    </div>
 
-                   {/* Right Content Area (Steps 1, 2, 3) */}
-                   <div className="p-8 md:w-7/12 flex flex-col bg-white overflow-y-auto">
+                   {/* Main Content Area (Now on the Left) */}
+                   <div className="p-6 md:p-10 md:w-7/12 flex flex-col bg-white overflow-y-auto relative border-r border-gray-100">
                       
                       {bookingStep === 1 && (
-                         <div className="flex flex-col h-full animate-in fade-in slide-in-from-right-4 duration-300">
-                            <p className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-4">STEP 1 of 3</p>
-                            <h3 className="text-xl font-bold text-[#0A2640] mb-2">Select date and time</h3>
-                            <p className="text-sm font-medium text-[#0A2640] mb-8">
-                               In your local timezone (Africa/Lagos) <button className="text-[#b22222] hover:underline ml-1">Update</button>
-                            </p>
+                         <div className="flex flex-col h-full animate-in fade-in slide-in-from-right-4">
+                            <div className="flex justify-between items-center mb-10">
+                               <h3 className="text-2xl font-black text-gray-900 tracking-tight">Select a date</h3>
+                               <div className="flex gap-3">
+                                  <button onClick={() => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1, 1))} className="h-10 w-10 bg-gray-50 hover:bg-gray-100 rounded-xl flex items-center justify-center text-gray-500 transition-colors"><ChevronLeft size={20} /></button>
+                                  <button onClick={() => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 1))} className="h-10 w-10 bg-gray-50 hover:bg-gray-100 rounded-xl flex items-center justify-center text-gray-500 transition-colors"><ChevronRight size={20} /></button>
+                               </div>
+                            </div>
                             
-                            <div className="flex-1">
-                               <div className="flex justify-between items-center mb-6">
-                                  <h3 className="text-base font-bold text-[#0A2640]">
-                                     {currentMonth.toLocaleString('default', { month: 'long', year: 'numeric' })}
-                                  </h3>
-                                  <div className="flex gap-2">
-                                     <button 
-                                        onClick={() => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1, 1))}
-                                        className="p-1 hover:bg-gray-100 rounded text-gray-500"
-                                     >
-                                        <ChevronLeft size={20} />
-                                     </button>
-                                     <button 
-                                        onClick={() => setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 1))}
-                                        className="p-1 hover:bg-gray-100 rounded text-gray-500"
-                                     >
-                                        <ChevronRight size={20} />
-                                     </button>
-                                  </div>
-                               </div>
+                            <p className="text-xs font-bold text-primary uppercase tracking-widest mb-6">Local Time (Africa/Lagos)</p>
 
-                               <div className="grid grid-cols-7 gap-1 text-center mb-4">
-                                  {['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map(d => (
-                                     <div key={d} className="text-[13px] font-bold text-[#0A2640]">{d}</div>
-                                  ))}
-                               </div>
-                               
-                               <div className="grid grid-cols-7 gap-y-2 gap-x-1 text-center">
-                                   {generateFullCalendarDays().map((dateObj, i) => {
-                                     if (!dateObj) return <div key={i} className="h-10"></div>;
-                                     
-                                     const { dateString, hasSlots, isPast } = getDateStatus(dateObj);
-                                     
-                                     let btnClass = "h-10 w-10 mx-auto rounded-full flex items-center justify-center text-[15px] font-bold transition-all ";
-                                     
-                                     if (isPast) {
-                                        btnClass += "text-gray-300 cursor-not-allowed ";
-                                     } else if (hasSlots) {
-                                        btnClass += selectedDateStr === dateString
-                                           ? "bg-[#b22222] text-white cursor-pointer shadow-md "
-                                           : "text-[#0A2640] bg-red-50 hover:bg-red-100 cursor-pointer ";
-                                     } else {
-                                        btnClass += selectedDateStr === dateString
-                                           ? "bg-gray-800 text-white cursor-pointer shadow-md "
-                                           : "text-[#0A2640] hover:bg-gray-100 cursor-pointer ";
-                                     }
-
-                                     return (
-                                        <button
-                                           key={i}
-                                           disabled={isPast} // Allow clicking any present/future date
-                                           onClick={() => setSelectedDateStr(dateString)}
-                                           className={btnClass}
-                                        >
-                                           {dateObj.getDate()}
-                                        </button>
-                                     );
-                                  })}
-                               </div>
+                            <div className="grid grid-cols-7 gap-2 text-center mb-4 text-[13px] font-black text-gray-400">
+                               {['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'].map(d => <div key={d}>{d}</div>)}
+                            </div>
+                            
+                            <div className="grid grid-cols-7 gap-3 text-center mb-8">
+                                {generateFullCalendarDays().map((dateObj, i) => {
+                                  if (!dateObj) return <div key={i} className="h-12 w-12" />;
+                                  const { dateString, hasSlots, isPast } = getDateStatus(dateObj);
+                                  const isSelected = selectedDateStr === dateString;
+                                  
+                                  return (
+                                     <button
+                                        key={i}
+                                        disabled={isPast}
+                                        onClick={() => setSelectedDateStr(dateString)}
+                                        className={`h-12 w-12 mx-auto rounded-2xl flex items-center justify-center text-sm font-black transition-all ${
+                                           isPast ? 'text-gray-200 cursor-not-allowed' :
+                                           isSelected ? 'bg-primary text-white shadow-xl shadow-primary/30 scale-110' :
+                                           hasSlots ? 'bg-primary/10 text-primary hover:bg-primary/20 cursor-pointer' :
+                                           'text-gray-900 hover:bg-gray-100 cursor-pointer'
+                                        }`}
+                                     >
+                                        {dateObj.getDate()}
+                                     </button>
+                                  );
+                               })}
                             </div>
                             
                             <button 
                                disabled={!selectedDateStr}
                                onClick={() => setBookingStep(2)}
-                               className={`mt-8 w-full py-4 rounded-xl text-base font-bold transition-all text-white shadow-md ${
-                                  !selectedDateStr ? 'bg-gray-400 cursor-not-allowed' : 'bg-[#b22222] hover:bg-red-800'
+                               className={`mt-auto w-full py-5 rounded-2xl text-lg font-black transition-all text-white shadow-xl ${
+                                  !selectedDateStr ? 'bg-gray-200 cursor-not-allowed' : 'bg-primary hover:bg-primary-dark shadow-primary/30'
                                }`}
                             >
-                               Continue
+                               Continue to Time
                             </button>
                          </div>
                       )}
 
                       {bookingStep === 2 && (
-                         <div className="flex flex-col h-full animate-in fade-in slide-in-from-right-4 duration-300">
-                            <p className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-4">STEP 2 of 3</p>
-                            <h3 className="text-xl font-bold text-[#0A2640] mb-2">Select available time</h3>
-                            <p className="text-sm font-medium text-[#0A2640] mb-4">
-                               In your local timezone (Africa/Lagos)
-                            </p>
-                            <div className="flex items-center text-sm font-bold text-[#0A2640] mb-8">
-                               Date: {selectedDateStr ? new Date(selectedDateStr).toLocaleDateString('en-US', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }) : ''}
-                               <button onClick={() => setBookingStep(1)} className="text-[#b22222] ml-3 hover:underline font-medium">Change</button>
-                            </div>
+                         <div className="flex flex-col h-full animate-in fade-in slide-in-from-right-4">
+                            <h3 className="text-2xl font-black text-gray-900 tracking-tight mb-10">Available Time Slots</h3>
                             
                             <div className="flex-1">
-                               <div className="flex items-center justify-between mb-4 border-b border-gray-100 pb-2">
-                                  <h4 className="text-sm font-bold text-[#0A2640]">Available time slots</h4>
-                                  <div className="flex gap-2 text-gray-300">
-                                     <ChevronLeft size={16} />
-                                     <ChevronRight size={16} />
-                                  </div>
-                               </div>
-
-                               <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 pb-4">
+                               <div className="grid grid-cols-3 gap-4">
                                   {selectedDateStr && getAvailableSlotsForDate(selectedDateStr).length > 0 ? (
                                      getAvailableSlotsForDate(selectedDateStr).map(slot => (
                                         <button 
                                            key={slot.id}
                                            onClick={() => setSelectedSlot({ ...slot, date: selectedDateStr })}
-                                           className={`py-3 px-2 border rounded-xl text-base font-bold transition-all flex items-center justify-center ${
+                                           className={`py-4 px-2 border-2 rounded-2xl text-lg font-black transition-all flex flex-col items-center justify-center shadow-sm hover:shadow-md ${
                                               selectedSlot?.id === slot.id && selectedSlot?.date === selectedDateStr
-                                                 ? 'bg-white text-[#0A2640] border-[#0A2640] ring-1 ring-[#0A2640]'
-                                                 : 'bg-white text-[#0A2640] border-gray-200 hover:border-gray-400'
+                                                 ? 'bg-[#b22222] text-white border-[#b22222] shadow-xl shadow-[#b22222]/20 scale-105'
+                                                 : 'bg-white text-gray-900 border-gray-100 hover:border-[#b22222]/50 hover:bg-[#b22222]/5'
                                            }`}
                                         >
                                            {slot.startTime}
+                                           {slot.price > 0 ? (
+                                               <span className={`text-[10px] font-bold uppercase mt-1 px-2 py-0.5 rounded-lg ${selectedSlot?.id === slot.id && selectedSlot?.date === selectedDateStr ? 'bg-white/20 text-white' : 'bg-gray-100 text-gray-500'}`}>
+                                                   ₦{slot.price.toLocaleString()}
+                                               </span>
+                                           ) : (
+                                               <span className={`text-[10px] font-bold uppercase mt-1 px-2 py-0.5 rounded-lg ${selectedSlot?.id === slot.id && selectedSlot?.date === selectedDateStr ? 'bg-white/20 text-white' : 'bg-green-50 text-green-600'}`}>
+                                                   Free
+                                               </span>
+                                           )}
                                         </button>
                                      ))
                                   ) : (
-                                     <div className="col-span-full py-8 text-center text-gray-500">
-                                        No slots available on this date.
+                                     <div className="col-span-full py-10 text-center text-gray-400 font-bold border-2 border-dashed border-gray-100 rounded-3xl">
+                                        No specific time slots defined for this day.
                                      </div>
                                   )}
                                </div>
                             </div>
                             
-                            <button 
-                               disabled={!selectedSlot || selectedSlot.date !== selectedDateStr}
-                               onClick={() => setBookingStep(3)}
-                               className={`mt-4 w-full py-4 rounded-xl text-base font-bold transition-all text-white shadow-md ${
-                                  !selectedSlot || selectedSlot.date !== selectedDateStr ? 'bg-gray-400 cursor-not-allowed' : 'bg-[#b22222] hover:bg-red-800'
-                               }`}
-                            >
-                               Continue
-                            </button>
+                            <div className="mt-8 flex gap-4">
+                               <button onClick={() => setBookingStep(1)} className="flex-1 py-5 rounded-2xl text-lg font-bold text-gray-500 hover:bg-gray-100 transition-colors">Back</button>
+                               <button 
+                                  disabled={!selectedSlot || selectedSlot.date !== selectedDateStr}
+                                  onClick={() => setBookingStep(3)}
+                                  className={`flex-[2] py-5 rounded-2xl text-lg font-black transition-all text-white shadow-xl ${
+                                     !selectedSlot || selectedSlot.date !== selectedDateStr ? 'bg-gray-200 cursor-not-allowed' : 'bg-primary hover:bg-primary-dark shadow-primary/30'
+                                  }`}
+                               >
+                                  Continue
+                               </button>
+                            </div>
                          </div>
                       )}
 
                       {bookingStep === 3 && (
-                         <div className="flex flex-col h-full animate-in fade-in slide-in-from-right-4 duration-300">
-                            <p className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-4">STEP 3 of 3</p>
-                            <h3 className="text-xl font-bold text-[#0A2640] mb-6">Confirm your booking</h3>
+                         <div className="flex flex-col h-full animate-in fade-in slide-in-from-right-4">
+                            <h3 className="text-2xl font-black text-gray-900 tracking-tight mb-10">Finalize Session</h3>
                             
-                            <div className="flex items-center gap-6 mb-8 text-[#0A2640]">
-                               <div className="flex items-center gap-2 font-bold text-sm">
-                                  <Calendar size={18} className="text-gray-400" />
-                                  {selectedSlot?.date ? new Date(selectedSlot.date).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }) : ''}
-                               </div>
-                               <div className="flex items-center gap-2 font-bold text-sm">
-                                  <Clock size={18} className="text-gray-400" />
-                                  {selectedSlot?.startTime}
-                               </div>
-                               <button onClick={() => setBookingStep(2)} className="text-[#b22222] hover:underline text-sm font-medium">Change</button>
-                            </div>
-                            
-                            <div className="flex-1 space-y-6">
+                            <div className="flex-1 space-y-8">
                                <div>
-                                  <label className="block text-sm font-bold text-[#0A2640] mb-2">Select main topic</label>
+                                  <label className="block text-sm font-black text-gray-900 mb-3 uppercase tracking-widest">Session Name</label>
                                   <div className="relative">
-                                     <select 
-                                        className="block w-full rounded-xl border-gray-300 shadow-sm focus:border-gray-500 focus:ring-gray-500 text-sm border p-4 bg-white text-gray-700 appearance-none font-medium"
-                                        value={bookingTopic}
-                                        onChange={(e) => setBookingTopic(e.target.value)}
-                                     >
-                                        <option value="">eg. 🌱 Managing burn out</option>
-                                        <option value="Career Advice">Career Advice</option>
-                                        <option value="Resume Review">Resume Review</option>
-                                        <option value="Technical Interview Prep">Technical Interview Prep</option>
-                                        <option value="Leadership & Management">Leadership & Management</option>
-                                        <option value="Other">Other</option>
-                                     </select>
-                                     <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-4 text-gray-500">
-                                        <ChevronRight size={16} className="rotate-90" />
-                                     </div>
+                                     {(selectedSlot?.session_type === 'topic' || selectedSlot?.title === 'Selectable Topic') ? (
+                                        <>
+                                           <select 
+                                              className="block w-full rounded-2xl border-gray-100 shadow-sm focus:border-primary focus:ring-primary text-sm border p-5 bg-gray-50 focus:bg-white text-gray-700 appearance-none font-bold transition-all"
+                                              value={bookingTopic}
+                                              onChange={(e) => setBookingTopic(e.target.value)}
+                                           >
+                                              <option value="">Select a topic</option>
+                                              {getArray(mentor.topics).length > 0 ? (
+                                                 getArray(mentor.topics).map((t, idx) => (
+                                                    <option key={idx} value={t}>{t}</option>
+                                                 ))
+                                              ) : getArray(mentor.expertise).length > 0 ? (
+                                                 getArray(mentor.expertise).map((t, idx) => (
+                                                    <option key={idx} value={t}>{t}</option>
+                                                 ))
+                                              ) : (
+                                                 <>
+                                                    <option value="Career Advice">🚀 Career Advice & Growth</option>
+                                                    <option value="Resume Review">📄 Resume / Portfolio Review</option>
+                                                    <option value="Technical Interview Prep">💻 Technical Interview Prep</option>
+                                                    <option value="Leadership & Management">👥 Leadership & Management</option>
+                                                    <option value="Freelancing & Business">💰 Freelancing & Business</option>
+                                                 </>
+                                              )}
+                                           </select>
+                                           <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-4 text-gray-500"><ChevronRight size={20} className="rotate-90" /></div>
+                                        </>
+                                     ) : (
+                                        <div className="w-full rounded-2xl border border-gray-200 bg-gray-100 p-5 font-bold text-gray-700 flex items-center justify-between">
+                                           <span>
+                                              {selectedSlot?.session_title || selectedSlot?.title || 'Mentorship Session'}
+                                           </span>
+                                        </div>
+                                     )}
                                   </div>
                                </div>
 
                                <div>
-                                  <label className="block text-sm font-bold text-[#0A2640] mb-1">
-                                     What are you looking to get out of this session? <br/>
-                                     <span className="text-gray-400 font-medium">(Required)</span>
+                                  <label className="block text-sm font-black text-gray-900 mb-3 uppercase tracking-widest">
+                                     Specific objectives
                                   </label>
                                   <textarea 
-                                     rows={4} 
-                                     className="block w-full mt-2 rounded-xl border-gray-200 shadow-sm focus:border-gray-500 focus:ring-gray-500 text-sm border p-4 bg-white font-medium resize-none" 
-                                     placeholder="Your answer"
+                                     rows={5} 
+                                     className="block w-full mt-2 rounded-2xl border-gray-100 shadow-sm focus:border-primary focus:ring-primary text-sm border p-5 bg-gray-50 focus:bg-white font-bold resize-none transition-all" 
+                                     placeholder="What do you hope to achieve? (e.g. 'I want feedback on my React portfolio...')"
                                      value={bookingNotes}
                                      onChange={(e) => setBookingNotes(e.target.value)}
                                   ></textarea>
                                </div>
                             </div>
                             
-                            <button 
-                               onClick={handleBookSession}
-                               disabled={!bookingNotes.trim() || !selectedSlot}
-                               className={`mt-6 w-full py-4 rounded-xl text-base font-bold transition-all text-white shadow-md ${
-                                  !bookingNotes.trim() || !selectedSlot ? 'bg-gray-400 cursor-not-allowed' : 'bg-[#b22222] hover:bg-red-800'
-                               }`}
-                            >
-                               Confirm booking
-                            </button>
+                            <div className="mt-8 flex gap-4">
+                               <button onClick={() => setBookingStep(2)} className="flex-1 py-5 rounded-2xl text-lg font-bold text-gray-500 hover:bg-gray-100 transition-colors">Back</button>
+                               <button 
+                                  onClick={handleBookSession}
+                                  disabled={!bookingNotes.trim() || !selectedSlot || isProcessingPayment}
+                                  className={`flex-[2] py-5 rounded-2xl text-lg font-black transition-all text-white shadow-xl ${
+                                     !bookingNotes.trim() || !selectedSlot || isProcessingPayment ? 'bg-gray-200 cursor-not-allowed' : 'bg-primary hover:bg-primary-dark shadow-primary/30'
+                                  }`}
+                               >
+                                  {isProcessingPayment ? 'Processing...' : (selectedSlot?.price > 0 ? `Pay ₦${selectedSlot.price.toLocaleString()}` : 'Confirm Booking')}
+                               </button>
+                            </div>
                          </div>
                       )}
 
@@ -940,73 +1042,106 @@ const MentorProfile = () => {
           )}
        </AnimatePresence>
       </div>
+
       {/* Message Request Modal */}
       <AnimatePresence>
          {isMessageModalOpen && (
-             <div className="fixed inset-0 z-[150] flex items-center justify-center bg-black/50 p-4 pb-[100px]">
+             <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 overflow-hidden">
                <motion.div 
-                  initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                  initial={{ opacity: 0, y: 30, scale: 0.9 }}
                   animate={{ opacity: 1, y: 0, scale: 1 }}
-                  exit={{ opacity: 0, scale: 0.95 }}
-                  className="bg-white rounded-2xl w-full max-w-md shadow-2xl overflow-hidden"
+                  exit={{ opacity: 0, y: 30, scale: 0.9 }}
+                  className="bg-white rounded-2xl sm:rounded-3xl w-full max-w-lg shadow-2xl overflow-hidden max-h-[80vh] sm:max-h-[85vh] flex flex-col"
                >
-                  <div className="p-6 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
-                     <div>
-                        <h2 className="text-xl font-bold border-gray-900 border-none">Request to Message</h2>
-                        <p className="text-sm border-gray-500 border-none mt-1">Introduce yourself to {mentor?.user?.name}</p>
+                  <div className="p-4 sm:p-6 border-b border-gray-100 flex justify-between items-start bg-gray-50/50 shrink-0">
+                     <div className="pr-4">
+                        <h2 className="text-xl sm:text-2xl font-bold text-gray-900 leading-tight">Send Connection Request</h2>
+                        <p className="text-xs sm:text-sm font-bold text-gray-400 mt-1 sm:mt-2">Briefly explain why you'd like to reach out.</p>
                      </div>
-                     <button onClick={() => setIsMessageModalOpen(false)} className="text-gray-400 hover:text-gray-600 border-none bg-transparent">
-                        <X size={24} />
+                     <button onClick={() => setIsMessageModalOpen(false)} className="text-gray-400 hover:text-gray-900 transition-colors p-2 bg-white rounded-full shadow-sm border border-gray-100 flex-shrink-0">
+                        <X size={20} />
                      </button>
                   </div>
                   
-                  <div className="p-6">
-                     <label className="block text-sm font-semibold text-gray-700 mb-2">Initial Message</label>
-                     <textarea
-                        value={messageText}
-                        onChange={(e) => setMessageText(e.target.value)}
-                        placeholder="Hi! I'd love to connect to discuss your expertise..."
-                        rows={4}
-                        className="w-full border border-gray-300 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent resize-none"
-                     ></textarea>
-                     <p className="text-xs text-gray-500 mt-2">Connecting with a mentor allows you to chat securely anytime.</p>
+                  <div className="p-4 sm:p-6 flex-1 overflow-y-auto">
+                     <div className="space-y-4 sm:space-y-6">
+                        <div className="flex items-center gap-3 bg-primary/5 p-3 sm:p-4 rounded-xl sm:rounded-2xl border border-primary/10">
+                           <MessageSquare className="text-primary flex-shrink-0" size={20} />
+                           <p className="text-xs sm:text-sm font-bold text-gray-700">Connecting lets you chat anytime with {mentor.name}.</p>
+                        </div>
+                        <div>
+                           <label className="block text-[10px] sm:text-xs font-black text-gray-400 uppercase tracking-widest mb-2 sm:mb-3">Introduce yourself</label>
+                           <textarea
+                              value={messageText}
+                              onChange={(e) => setMessageText(e.target.value)}
+                              placeholder="Hi! I admire your work in Engineering and would love to ask a few questions about..."
+                              rows={4}
+                              className="w-full border border-gray-100 rounded-xl sm:rounded-2xl px-4 py-3 sm:px-5 sm:py-4 bg-gray-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary font-bold text-gray-700 transition-all resize-none shadow-inner text-sm"
+                           ></textarea>
+                        </div>
+                     </div>
                   </div>
 
-                  <div className="p-6 bg-gray-50 border-t border-gray-100 flex justify-end gap-3">
+                  <div className="p-4 sm:p-6 bg-gray-50/50 border-t border-gray-100 flex justify-end gap-3 shrink-0 pb-safe shadow-[0_-4px_10px_rgba(0,0,0,0.03)]">
                      <button 
                         onClick={() => setIsMessageModalOpen(false)}
-                        className="px-5 py-2.5 text-sm font-semibold text-gray-600 hover:bg-gray-100 rounded-xl transition-colors border-none bg-transparent"
+                        className="px-4 sm:px-8 py-2.5 sm:py-4 text-xs sm:text-sm font-bold text-gray-500 hover:bg-gray-100 rounded-xl sm:rounded-2xl transition-all"
                      >
-                        Cancel
+                        Discard
                      </button>
                      <button 
                         disabled={!messageText.trim() || isSendingMessage}
                         onClick={async () => {
                            setIsSendingMessage(true);
                            try {
-                              await connectionService.requestConnection(mentor.user_id, { initialMessage: messageText });
-                              addToast("Message request sent successfully!", "success");
-                              setIsMessageModalOpen(false);
-                              setMessageText('');
+                               await messageRequestService.sendMessageRequest({ mentorId: id, initialMessage: messageText });
+                               addToast("Connection request sent!", "success");
+                               setIsMessageModalOpen(false);
+                               setMessageText('');
                            } catch(err) {
-                              addToast(err.response?.data?.message || "Failed to send request", "error");
+                               addToast(err.response?.data?.message || "Failed to send request", "error");
                            } finally {
-                              setIsSendingMessage(false);
+                               setIsSendingMessage(false);
                            }
                         }}
-                        className={`px-5 py-2.5 text-sm font-bold text-white rounded-xl shadow-md transition-all flex items-center ${
-                           !messageText.trim() || isSendingMessage ? 'bg-gray-400 cursor-not-allowed' : 'bg-primary hover:bg-primary-dark translate-y-[-1px]'
-                        } border-none`}
+                        className={`px-5 sm:px-10 py-2.5 sm:py-4 text-xs sm:text-sm font-bold text-white rounded-xl sm:rounded-2xl shadow-xl flex items-center justify-center transition-all ${
+                           !messageText.trim() || isSendingMessage ? 'bg-gray-300 cursor-not-allowed' : 'bg-primary hover:bg-primary-dark shadow-primary/30 transform hover:-translate-y-0.5'
+                        }`}
                      >
                         {isSendingMessage ? (
-                           <><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin mr-2" /> Sending...</>
-                        ) : 'Send Request'}
+                           <div className="w-4 h-4 sm:w-5 sm:h-5 border-2 sm:border-3 border-white/30 border-t-white rounded-full animate-spin" />
+                        ) : (
+                           <><Send size={16} className="mr-1.5 sm:mr-2" /> Send Request</>
+                        )}
                      </button>
                   </div>
                </motion.div>
-            </div>
+             </div>
          )}
       </AnimatePresence>
+
+      {/* Mobile Sticky Booking Bar */}
+      <div className="lg:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-100 z-[55] p-4 pb-safe flex items-center justify-between shadow-[0_-10px_40px_rgba(0,0,0,0.05)]">
+         <div className="flex flex-col">
+             <span className="text-[10px] text-gray-400 font-bold uppercase tracking-widest mb-0.5">Next Available</span>
+             {(() => {
+                let nextStr = 'Check Calendar';
+                if (mentor?.availability?.length > 0) {
+                    const futureSlots = mentor.availability.filter(s => new Date(s.date).setHours(0,0,0,0) >= new Date().setHours(0,0,0,0));
+                    futureSlots.sort((a,b) => new Date(a.date) - new Date(b.date));
+                    if (futureSlots.length > 0) {
+                        const dt = new Date(futureSlots[0].date);
+                        nextStr = `${dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} • ${futureSlots[0].startTime}`;
+                    }
+                }
+                return <span className="text-gray-900 font-black text-sm truncate max-w-[160px]">{nextStr}</span>;
+             })()}
+         </div>
+         <button onClick={() => setBookingStep(1)} className="bg-primary hover:bg-primary-dark text-white font-bold py-3 px-6 rounded-2xl shadow-xl shadow-primary/30 active:scale-95 transition-all flex items-center gap-2">
+             <Calendar size={18} className="hidden sm:block" />
+             Book Session
+         </button>
+      </div>
 
     </div>
   );

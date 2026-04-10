@@ -2,29 +2,46 @@ import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { useAuth } from '../context/AuthContext';
 import { Link } from 'react-router-dom';
-import { Search, Calendar, MessageSquare, ArrowRight, Star, Clock } from 'lucide-react';
+import { Search, Calendar, MessageSquare, ArrowRight, Star, Clock, BookOpen } from 'lucide-react';
 import api from '../api/axios';
 import { bookingService, mentorService } from '../api/services';
 const MenteeHome = () => {
   const { user } = useAuth();
   const [upcomingSessions, setUpcomingSessions] = useState([]);
   const [recommendedMentors, setRecommendedMentors] = useState([]);
+  const [featuredPlaybooks, setFeaturedPlaybooks] = useState([]);
+
+  const getArray = (val) => {
+     if (!val) return [];
+     if (Array.isArray(val)) return val;
+     if (typeof val === 'string') {
+        try { 
+           const parsed = JSON.parse(val); 
+           return Array.isArray(parsed) ? parsed : [val];
+        } catch(e) { 
+           return val.split(',').map(s => s.trim()).filter(Boolean); 
+        }
+     }
+     return [];
+  };
 
   useEffect(() => {
     const fetchMenteeData = async () => {
       try {
-        const [bookingsRes, mentorsRes] = await Promise.all([
+        const [bookingsRes, mentorsRes, playbooksRes] = await Promise.all([
            bookingService.getMenteeBookings(),
-           mentorService.getMentors()
+           mentorService.getMentors(),
+           api.get('/playbooks') // or playbookService.getPlaybooks()
         ]);
         
         const allBookings = bookingsRes.data.appointments || bookingsRes.data.data || bookingsRes.data || [];
+        const todayStr = new Date().toISOString().split('T')[0];
         // Filter for upcoming
-        const upcoming = allBookings.filter(b => b.status === 'confirmed' || b.status === 'accepted').slice(0, 3).map(b => ({
+        const upcoming = allBookings.filter(b => (b.status === 'confirmed' || b.status === 'accepted') && b.date >= todayStr).slice(0, 3).map(b => ({
            id: b.id,
            mentor: { 
               name: b.mentor?.user?.name || b.mentor?.User?.name || `${b.mentor?.user?.firstName || ''} ${b.mentor?.user?.lastName || ''}`.trim() || 'Mentor', 
-              expertise: b.mentor?.expertise?.[0] || 'Expert',
+              expertise: getArray(b.mentor?.expertise)[0] || 'Expert',
               picture: b.mentor?.user?.picture || b.mentor?.User?.picture || null
            },
            date: b.date,
@@ -35,6 +52,9 @@ const MenteeHome = () => {
 
         const allMentors = mentorsRes.data.data || mentorsRes.data.mentors || mentorsRes.data || [];
         setRecommendedMentors(allMentors.slice(0, 3));
+
+        const allPlaybooks = playbooksRes.data.data?.playbooks || playbooksRes.data.playbooks || [];
+        setFeaturedPlaybooks(allPlaybooks.slice(0, 2));
       } catch (err) {
         console.error("Failed to fetch mentee home data", err);
       }
@@ -162,19 +182,30 @@ const MenteeHome = () => {
                 <Link to="/mentee/playbooks" className="text-sm font-medium text-primary hover:text-primary-dark">Library</Link>
              </div>
              
-             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {[1,2].map(i => (
-                  <div key={i} className="group relative rounded-lg border border-gray-200 overflow-hidden hover:shadow-md transition-shadow">
-                     <div className="aspect-w-16 aspect-h-9 bg-gray-200">
-                        {/* Image Placeholder */}
+             <div className="grid grid-cols-1 gap-4">
+                {featuredPlaybooks.length > 0 ? featuredPlaybooks.map(p => (
+                  <Link to={`/mentee/playbooks`} state={{ openPlaybook: p }} key={p.id} className="group relative flex flex-col sm:flex-row gap-5 p-5 rounded-2xl bg-white border border-gray-100 shadow-sm hover:shadow-xl hover:border-primary/20 transition-all duration-300 transform hover:-translate-y-1">
+                     <div className="h-24 w-full sm:w-24 bg-gradient-to-br from-indigo-50 to-blue-50 rounded-xl shrink-0 flex items-center justify-center text-primary group-hover:scale-105 transition-transform duration-300 pointer-events-none">
+                        <BookOpen size={32} strokeWidth={1.5} className="group-hover:text-blue-600 transition-colors" />
                      </div>
-                     <div className="p-4">
-                        <p className="text-xs text-primary font-semibold mb-1 uppercase tracking-wide">Career Advice</p>
-                        <h4 className="font-bold text-gray-900 group-hover:text-primary transition-colors">How to ace the System Design Interview</h4>
-                        <p className="text-sm text-gray-500 mt-1 line-clamp-2">A comprehensive guide to structured thinking during technical interviews.</p>
+                     <div className="flex flex-col flex-1 justify-center">
+                        <span className="text-[10px] font-black text-blue-600 uppercase tracking-widest bg-blue-50 self-start px-2 py-1 rounded-md mb-2">{p.category || 'General'}</span>
+                        <h4 className="text-lg font-bold text-gray-900 group-hover:text-primary transition-colors line-clamp-1 mb-1">{p.title}</h4>
+                        <p className="text-sm text-gray-500 line-clamp-2 leading-relaxed mb-3">{p.description}</p>
+                        
+                        <div className="flex items-center gap-2 mt-auto">
+                           <div className="h-6 w-6 rounded-full overflow-hidden bg-gray-100 flex items-center justify-center border border-gray-200 shrink-0">
+                              {p.mentor?.picture ? <img src={p.mentor.picture} className="w-full h-full object-cover" /> : <span className="text-[8px] font-bold text-primary">{p.mentor?.name?.charAt(0) || 'M'}</span>}
+                           </div>
+                           <span className="text-xs font-semibold text-gray-600">By {p.mentor?.name || 'Mentor'}</span>
+                        </div>
                      </div>
-                  </div>
-                ))}
+                  </Link>
+                )) : (
+                   <div className="col-span-1 border border-dashed border-gray-200 p-6 text-center rounded-xl bg-gray-50 flex items-center justify-center">
+                      <p className="text-gray-500 text-sm">No featured playbooks available.</p>
+                   </div>
+                )}
              </div>
           </section>
 
@@ -199,7 +230,7 @@ const MenteeHome = () => {
                     )}
                     <div className="flex-1 min-w-0">
                        <h4 className="text-sm font-bold text-gray-900 truncate">{(mentor.user || mentor.User)?.name || `${(mentor.user || mentor.User)?.firstName || ''} ${(mentor.user || mentor.User)?.lastName || ''}`.trim() || 'Mentor'}</h4>
-                       <p className="text-xs text-gray-500 truncate">{mentor.expertise && mentor.expertise[0]}</p>
+                       <p className="text-xs text-gray-500 truncate">{getArray(mentor.expertise)[0] || 'Expert'}</p>
                     </div>
                     <Link to={`/mentee/mentor/${mentor.id}`} className="ml-2 text-primary hover:bg-primary/10 p-1.5 rounded-full transition-colors">
                        <ArrowRight size={18} />

@@ -4,6 +4,7 @@ import { useSocket } from '../context/SocketContext';
 import { Search, Send, MoreVertical, Image, Paperclip, MessageSquare, Trash2, Check, CheckCheck, File, Download, X } from 'lucide-react';
 import { connectionService } from '../api/services';
 import api from '../api/axios';
+import { Link } from 'react-router-dom';
 
 const Chat = () => {
     const { user } = useAuth();
@@ -26,6 +27,7 @@ const Chat = () => {
     const [loading, setLoading] = useState(true);
     const [showMenu, setShowMenu] = useState(false);
     const [clearingChat, setClearingChat] = useState(false);
+    const [searchTerm, setSearchTerm] = useState('');
 
     // 1. Load active (accepted) connections globally mapped
     useEffect(() => {
@@ -49,7 +51,8 @@ const Chat = () => {
                             role: isMentor ? 'mentee' : 'mentor',
                             lastMessage: 'Tap to open chat',
                             unread: 0,
-                            targetUserId: targetUser.id
+                            targetUserId: targetUser.id,
+                            profile: isMentor ? conn.mentee : conn.mentor
                         };
                     }).filter(Boolean);
                     setConversations(formatted);
@@ -235,19 +238,24 @@ const Chat = () => {
         }
     };
 
+    const filteredConversations = conversations.filter(c => c.name.toLowerCase().includes(searchTerm.toLowerCase()));
+
     return (
+        <>
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 flex h-[calc(100vh-8rem)] overflow-hidden">
             {/* Sidebar: Message List */}
             <div className={`w-full md:w-1/3 border-r border-gray-200 flex-col bg-gray-50/50 flex ${activeChat ? 'hidden md:flex' : 'flex'}`}>
-                <div className="p-4 border-b border-gray-200">
-                    <h2 className="text-lg font-bold text-gray-900 mb-4">Messages</h2>
-                    <div className="relative">
+                <div className="p-5 border-b border-gray-100 shrink-0">
+                    <h2 className="text-xl font-black text-gray-900 mb-4 tracking-tight">Messages</h2>
+                    <div className="relative group">
                         <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                            <Search className="h-4 w-4 text-gray-400" />
+                            <Search className="h-4 w-4 text-gray-400 group-focus-within:text-primary transition-colors" />
                         </div>
                         <input
                             type="text"
-                            className="block w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-1 focus:ring-primary focus:border-primary"
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                            className="block w-full pl-9 pr-3 py-2.5 bg-gray-100 border-transparent rounded-xl placeholder-gray-400 font-bold focus:outline-none focus:bg-white focus:border-primary focus:ring-4 focus:ring-primary/10 text-sm transition-all shadow-inner focus:shadow-sm"
                             placeholder="Search conversations..."
                         />
                     </div>
@@ -255,8 +263,8 @@ const Chat = () => {
                 
                 <div className="flex-1 overflow-y-auto">
                     {loading ? (
-                        <div className="p-4 text-center text-sm text-gray-500">Loading connections...</div>
-                    ) : conversations.length > 0 ? conversations.map(conv => (
+                        <div className="p-4 text-center text-sm font-bold text-gray-400">Loading connections...</div>
+                    ) : filteredConversations.length > 0 ? filteredConversations.map(conv => (
                         <button 
                             key={conv.connectionId}
                             onClick={() => setActiveChat(conv)}
@@ -293,22 +301,24 @@ const Chat = () => {
                     <>
                         <div className="p-4 border-b border-gray-200 bg-white flex justify-between items-center z-20">
                             <div className="flex items-center space-x-3">
-                                <button className="md:hidden text-gray-500 hover:text-gray-700" onClick={() => setActiveChat(null)}>
+                                <button className="text-gray-500 hover:text-gray-900 font-bold pr-2 mr-2 border-r border-gray-200 flex items-center transition-colors" onClick={() => setActiveChat(null)}>
                                     &larr; Back
                                 </button>
-                                <div className="h-10 w-10 rounded-full bg-primary/20 text-primary flex items-center justify-center font-bold uppercase overflow-hidden">
-                                    {activeChat.picture && activeChat.picture.startsWith('http') ? (
-                                        <img src={activeChat.picture} alt={activeChat.name} className="h-full w-full object-cover" />
-                                    ) : (
-                                        activeChat.name.charAt(0)
-                                    )}
-                                </div>
-                                <div>
-                                    <h3 className="font-bold text-gray-900 capitalize">{activeChat.name}</h3>
-                                    <p className={`text-xs font-medium ${onlineUsers.has(activeChat.id) ? 'text-green-600' : 'text-gray-400'}`}>
-                                        {onlineUsers.has(activeChat.id) ? 'Online' : 'Offline'}
-                                    </p>
-                                </div>
+                                <Link to={`/${user?.userType === 'mentor' ? 'mentor/mentee' : 'mentee/mentor'}/${activeChat.id}`} state={{ profile: activeChat.profile }} className="flex items-center space-x-3 text-left hover:opacity-80 transition-opacity focus:outline-none" title="View Profile">
+                                    <div className="h-10 w-10 rounded-full bg-primary/20 text-primary flex items-center justify-center font-bold uppercase overflow-hidden shadow-sm hover:ring-2 ring-primary/30 transition-all">
+                                        {activeChat.picture && activeChat.picture.startsWith('http') ? (
+                                            <img src={activeChat.picture} alt={activeChat.name} className="h-full w-full object-cover" />
+                                        ) : (
+                                            activeChat.name.charAt(0)
+                                        )}
+                                    </div>
+                                    <div>
+                                        <h3 className="font-bold text-gray-900 capitalize hover:text-primary transition-colors">{activeChat.name}</h3>
+                                        <p className={`text-[11px] font-bold uppercase tracking-wider mt-0.5 ${onlineUsers.has(activeChat.id) ? 'text-green-500' : 'text-gray-400'}`}>
+                                            {onlineUsers.has(activeChat.id) ? 'Online' : 'Offline'}
+                                        </p>
+                                    </div>
+                                </Link>
                             </div>
                             <div className="flex items-center space-x-2 relative">
                                 <button 
@@ -355,7 +365,7 @@ const Chat = () => {
                                         <div className={`max-w-[75%] rounded-2xl px-4 py-2 text-sm shadow-sm break-words relative overflow-hidden ${
                                             isOwn 
                                                 ? 'bg-primary text-white rounded-br-none' 
-                                                : 'bg-[#E6F3F5] text-[#0A2640] rounded-bl-none shadow-sm'
+                                                : 'bg-[#E6F3F5] text-[#b22222] rounded-bl-none shadow-sm'
                                         } ${msg.isDeleted ? 'bg-gray-100 text-gray-400 italic font-medium !border-gray-100 mix-blend-multiply' : ''}`}>
                                             
                                             {msg.fileUrl && !msg.isDeleted ? (
@@ -377,7 +387,7 @@ const Chat = () => {
                                                     ) : (
                                                         <div className="flex flex-col space-y-2">
                                                             <div className="flex items-center space-x-3 bg-black/5 p-3 rounded-xl border border-black/5">
-                                                                <div className="p-2 bg-white/20 rounded-lg text-[#0A2640]">
+                                                                <div className="p-2 bg-white/20 rounded-lg text-[#b22222]">
                                                                     <File size={20} />
                                                                 </div>
                                                                 <div className="flex-1 min-w-0">
@@ -437,7 +447,7 @@ const Chat = () => {
                                         ) : (
                                             <div className="h-20 w-20 flex flex-col items-center justify-center bg-gray-100 text-gray-500 rounded-lg">
                                                 <File size={24} className="mb-1" />
-                                                <span className="text-[10px] font-bold px-2 truncate max-w-[80px] text-[#0A2640]">{selectedFile.name}</span>
+                                                <span className="text-[10px] font-bold px-2 truncate max-w-[80px] text-[#b22222]">{selectedFile.name}</span>
                                             </div>
                                         )}
                                         <button type="button" onClick={cancelFilePreview} className="absolute top-1 right-1 bg-black/50 text-white rounded-full p-1 hover:bg-black transition-colors">
@@ -517,6 +527,7 @@ const Chat = () => {
                 </div>
             )}
         </div>
+        </>
     );
 };
 

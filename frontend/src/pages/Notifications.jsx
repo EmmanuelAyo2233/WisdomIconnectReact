@@ -37,6 +37,13 @@ const Notifications = () => {
       const res = await notificationService.getNotifications();
       if (res.data?.data) {
         setNotifications(res.data.data);
+        
+        // Auto mark as read in the background if there are unread items
+        const hasUnread = res.data.data.some(n => !n.isRead);
+        if (hasUnread) {
+           notificationService.markAllAsRead().catch(err => console.error("Failed to mark read instantly", err));
+           // Note: we leave local state unchanged so the user can see what's new.
+        }
       }
     } catch (err) {
       console.error("Error fetching notifications:", err);
